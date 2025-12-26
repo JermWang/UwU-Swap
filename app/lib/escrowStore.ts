@@ -180,10 +180,15 @@ function ensureMockSeeded(): void {
       ],
     });
 
-    const m1 = base.milestones?.[0]!;
-    const m2 = base.milestones?.[1]!;
-    const m3 = base.milestones?.[2]!;
-    const m4 = base.milestones?.[3]!;
+    const milestones = base.milestones;
+    if (!milestones || milestones.length < 4) {
+      throw new Error("Invalid seed reward commitment (missing milestones)");
+    }
+
+    const m1 = milestones[0];
+    const m2 = milestones[1];
+    const m3 = milestones[2];
+    const m4 = milestones[3];
 
     const m1Completed = now - 8 * 24 * 60 * 60;
     const m1Claimable = m1Completed + 48 * 60 * 60;
