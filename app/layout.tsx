@@ -1,4 +1,5 @@
 import "./globals.css";
+import { Suspense } from "react";
 import Link from "next/link";
 import TokenContractBar from "./components/TokenContractBar";
 import GlobalNavLinks from "./components/GlobalNavLinks";
@@ -29,11 +30,13 @@ export default function RootLayout({
               <TokenContractBar />
             </div>
 
-            <GlobalNavLinks />
+            <Suspense fallback={null}>
+              <GlobalNavLinks />
+            </Suspense>
           </div>
         </header>
 
-        {children}
+        <Suspense fallback={null}>{children}</Suspense>
       </body>
     </html>
   );

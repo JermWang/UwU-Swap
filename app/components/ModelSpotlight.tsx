@@ -2,8 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
-import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment";
-import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader";
+import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 
 type Props = {
   src: string;
@@ -26,7 +26,6 @@ export default function ModelSpotlight(props: Props) {
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 2.05;
-    renderer.useLegacyLights = false;
     renderer.setClearColor(0xf6f7fb, 1);
     host.appendChild(renderer.domElement);
 
@@ -64,7 +63,6 @@ export default function ModelSpotlight(props: Props) {
 
     const loader = new GLTFLoader();
 
-    let model: THREE.Object3D | null = null;
     let raf = 0;
 
     const resize = () => {
@@ -91,27 +89,32 @@ export default function ModelSpotlight(props: Props) {
 
     const onLoad = (gltf: any) => {
       if (!mounted) return;
-      model = gltf.scene;
+      const loadedModel = gltf?.scene as THREE.Object3D | undefined;
+      if (!loadedModel) {
+        setMissing(true);
+        tick();
+        return;
+      }
 
       pivot.rotation.set(0, 0, 0);
 
-      const box = new THREE.Box3().setFromObject(model);
+      const box = new THREE.Box3().setFromObject(loadedModel);
       const size = new THREE.Vector3();
       box.getSize(size);
       const center = new THREE.Vector3();
       box.getCenter(center);
-      model.position.sub(center);
+      loadedModel.position.sub(center);
 
       const maxDim = Math.max(size.x, size.y, size.z);
       const scale = maxDim > 0 ? 1.2 / maxDim : 1;
-      model.scale.setScalar(scale);
+      loadedModel.scale.setScalar(scale);
 
-      const box2 = new THREE.Box3().setFromObject(model);
+      const box2 = new THREE.Box3().setFromObject(loadedModel);
       const center2 = new THREE.Vector3();
       box2.getCenter(center2);
-      model.position.sub(center2);
+      loadedModel.position.sub(center2);
 
-      model.traverse((obj) => {
+      loadedModel.traverse((obj) => {
         const mesh = obj as THREE.Mesh;
         if (!(mesh as any).isMesh) return;
         const mat = (mesh as any).material;
@@ -124,7 +127,7 @@ export default function ModelSpotlight(props: Props) {
         }
       });
 
-      pivot.add(model);
+      pivot.add(loadedModel);
       setMissing(false);
       tick();
     };
