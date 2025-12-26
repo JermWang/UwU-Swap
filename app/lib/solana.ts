@@ -1,0 +1,251 @@
+import { Connection, Keypair, PublicKey, SystemProgram, Transaction } from "@solana/web3.js";
+import bs58 from "bs58";
+
+import { getConnection as getConnectionRpc, getServerCommitment, withRetry } from "./rpc";
+
+export function getConnection(): Connection {
+  return getConnectionRpc();
+}
+
+export function parsePubkey(value: string): PublicKey {
+  return new PublicKey(value);
+}
+
+export function keypairFromBase58Secret(secret: string): Keypair {
+  const bytes = bs58.decode(secret);
+  return Keypair.fromSecretKey(bytes);
+}
+
+export async function getBalanceLamports(connection: Connection, pubkey: PublicKey): Promise<number> {
+  const c = getServerCommitment();
+  return await withRetry(() => connection.getBalance(pubkey, c));
+}
+
+export async function getChainUnixTime(connection: Connection): Promise<number> {
+  const c = getServerCommitment();
+  const slot = await withRetry(() => connection.getSlot(c));
+  const t = await withRetry(() => connection.getBlockTime(slot));
+  if (typeof t === "number") return t;
+  return Math.floor(Date.now() / 1000);
+}
+
+export async function hasAnyTokenBalanceForMint(input: {
+  connection: Connection;
+  owner: PublicKey;
+  mint: PublicKey;
+}): Promise<boolean> {
+  const { connection, owner, mint } = input;
+  const c = getServerCommitment();
+  const res = await withRetry(() => connection.getParsedTokenAccountsByOwner(owner, { mint }, c));
+  for (const a of res.value) {
+    const parsed: any = a.account?.data?.parsed;
+    const amountRaw = parsed?.info?.tokenAmount?.amount;
+    if (typeof amountRaw === "string") {
+      const n = Number(amountRaw);
+      if (Number.isFinite(n) && n > 0) return true;
+    }
+  }
+  return false;
+}
+
+export async function getTokenBalanceForMint(input: {
+  connection: Connection;
+  owner: PublicKey;
+  mint: PublicKey;
+}): Promise<{ amountRaw: bigint; decimals: number; uiAmount: number }> {
+  const { connection, owner, mint } = input;
+  const c = getServerCommitment();
+  const res = await withRetry(() => connection.getParsedTokenAccountsByOwner(owner, { mint }, c));
+
+  let total = 0n;
+  let decimals = 0;
+
+  for (const a of res.value) {
+    const parsed: any = a.account?.data?.parsed;
+    const tokenAmount = parsed?.info?.tokenAmount;
+    const amountRaw = tokenAmount?.amount;
+    const dec = tokenAmount?.decimals;
+    if (typeof dec === "number" && Number.isFinite(dec)) decimals = dec;
+    if (typeof amountRaw === "string" && amountRaw.length) {
+      try {
+        total += BigInt(amountRaw);
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  if (total <= 0n) return { amountRaw: 0n, decimals, uiAmount: 0 };
+
+  const d = BigInt(Math.max(0, Math.min(18, decimals)));
+  const divisor = 10n ** d;
+  const whole = total / divisor;
+  const frac = total % divisor;
+  const fracStr = frac.toString().padStart(Number(d), "0").slice(0, 9);
+
+  const wholeNum = Number(whole);
+  const fracNum = fracStr.length ? Number(`0.${fracStr}`) : 0;
+  const uiAmount = (Number.isFinite(wholeNum) ? wholeNum : 0) + (Number.isFinite(fracNum) ? fracNum : 0);
+
+  return { amountRaw: total, decimals, uiAmount };
+}
+
+export async function getMintAuthorityBase58(input: { connection: Connection; mint: PublicKey }): Promise<string | null> {
+  const { connection, mint } = input;
+  const c = getServerCommitment();
+  const info = await withRetry(() => connection.getParsedAccountInfo(mint, c));
+  const value: any = info.value;
+  const parsed = value?.data?.parsed;
+  const mintAuthority = parsed?.info?.mintAuthority;
+  if (typeof mintAuthority === "string" && mintAuthority.length) return mintAuthority;
+  return null;
+}
+
+const TOKEN_METADATA_PROGRAM_ID = new PublicKey("metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s");
+
+export async function getTokenMetadataUpdateAuthorityBase58(input: { connection: Connection; mint: PublicKey }): Promise<string | null> {
+  const { connection, mint } = input;
+  const [pda] = PublicKey.findProgramAddressSync(
+    [Buffer.from("metadata"), TOKEN_METADATA_PROGRAM_ID.toBuffer(), mint.toBuffer()],
+    TOKEN_METADATA_PROGRAM_ID
+  );
+
+  const c = getServerCommitment();
+  const acct = await withRetry(() => connection.getAccountInfo(pda, c));
+  if (!acct?.data || acct.data.length < 33) return null;
+
+  const updateAuthorityBytes = acct.data.subarray(1, 33);
+  return new PublicKey(updateAuthorityBytes).toBase58();
+}
+
+async function getFeePayerKeypair(): Promise<Keypair | null> {
+  const s = process.env.ESCROW_FEE_PAYER_SECRET_KEY;
+  if (!s) return null;
+  return keypairFromBase58Secret(s);
+}
+
+export async function transferLamports(opts: {
+  connection: Connection;
+  from: Keypair;
+  to: PublicKey;
+  lamports: number;
+}): Promise<{ signature: string; amountLamports: number }> {
+  const { connection, from, to } = opts;
+  const lamports = Number(opts.lamports);
+  if (!Number.isFinite(lamports) || lamports <= 0) throw new Error("Invalid lamports");
+
+  const feePayer = await getFeePayerKeypair();
+  const c = getServerCommitment();
+  const processed = "processed" as const;
+  const balance = await withRetry(() => connection.getBalance(from.publicKey, c));
+
+  const tx = new Transaction();
+
+  if (!feePayer) {
+    const { blockhash, lastValidBlockHeight } = await withRetry(() => connection.getLatestBlockhash(processed));
+    tx.recentBlockhash = blockhash;
+    tx.lastValidBlockHeight = lastValidBlockHeight;
+    tx.feePayer = from.publicKey;
+
+    tx.add(
+      SystemProgram.transfer({
+        fromPubkey: from.publicKey,
+        toPubkey: to,
+        lamports,
+      })
+    );
+
+    const msg = tx.compileMessage();
+    const fee = await withRetry(() => connection.getFeeForMessage(msg, c));
+    const feeLamports = fee.value ?? 5000;
+    if (balance < lamports + feeLamports) throw new Error("Insufficient balance to cover amount + fees");
+
+    const signature = await withRetry(() => connection.sendTransaction(tx, [from], { skipPreflight: false, preflightCommitment: processed }));
+    await withRetry(() => connection.confirmTransaction({ signature, blockhash, lastValidBlockHeight }, c), { attempts: 4, baseDelayMs: 350 });
+    return { signature, amountLamports: lamports };
+  }
+
+  if (balance < lamports) throw new Error("Insufficient balance");
+
+  const { blockhash, lastValidBlockHeight } = await withRetry(() => connection.getLatestBlockhash(processed));
+  tx.recentBlockhash = blockhash;
+  tx.lastValidBlockHeight = lastValidBlockHeight;
+  tx.feePayer = feePayer.publicKey;
+
+  tx.add(
+    SystemProgram.transfer({
+      fromPubkey: from.publicKey,
+      toPubkey: to,
+      lamports,
+    })
+  );
+
+  const signature = await withRetry(() => connection.sendTransaction(tx, [feePayer, from], { skipPreflight: false, preflightCommitment: processed }));
+  await withRetry(() => connection.confirmTransaction({ signature, blockhash, lastValidBlockHeight }, c), { attempts: 4, baseDelayMs: 350 });
+  return { signature, amountLamports: lamports };
+}
+
+export async function transferAllLamports(opts: {
+  connection: Connection;
+  from: Keypair;
+  to: PublicKey;
+}): Promise<{ signature: string; amountLamports: number }> {
+  const { connection, from, to } = opts;
+
+  const feePayer = await getFeePayerKeypair();
+  const c = getServerCommitment();
+  const processed = "processed" as const;
+  const balance = await withRetry(() => connection.getBalance(from.publicKey, c));
+  if (balance <= 0) throw new Error("No lamports to transfer");
+
+  const tx = new Transaction();
+
+  let lamportsToSend = balance;
+  if (!feePayer) {
+    const { blockhash, lastValidBlockHeight } = await withRetry(() => connection.getLatestBlockhash(processed));
+    tx.recentBlockhash = blockhash;
+    tx.lastValidBlockHeight = lastValidBlockHeight;
+    tx.feePayer = from.publicKey;
+
+    tx.add(
+      SystemProgram.transfer({
+        fromPubkey: from.publicKey,
+        toPubkey: to,
+        lamports: balance,
+      })
+    );
+
+    const msg = tx.compileMessage();
+    const fee = await withRetry(() => connection.getFeeForMessage(msg, c));
+    const feeLamports = fee.value ?? 5000;
+    lamportsToSend = balance - feeLamports;
+    if (lamportsToSend <= 0) throw new Error("Insufficient balance to cover fees");
+
+    tx.instructions[0] = SystemProgram.transfer({
+      fromPubkey: from.publicKey,
+      toPubkey: to,
+      lamports: lamportsToSend,
+    });
+
+    const signature = await withRetry(() => connection.sendTransaction(tx, [from], { skipPreflight: false, preflightCommitment: processed }));
+    await withRetry(() => connection.confirmTransaction({ signature, blockhash, lastValidBlockHeight }, c), { attempts: 4, baseDelayMs: 350 });
+    return { signature, amountLamports: lamportsToSend };
+  }
+
+  const { blockhash, lastValidBlockHeight } = await withRetry(() => connection.getLatestBlockhash(processed));
+  tx.recentBlockhash = blockhash;
+  tx.lastValidBlockHeight = lastValidBlockHeight;
+  tx.feePayer = feePayer.publicKey;
+
+  tx.add(
+    SystemProgram.transfer({
+      fromPubkey: from.publicKey,
+      toPubkey: to,
+      lamports: lamportsToSend,
+    })
+  );
+
+  const signature = await withRetry(() => connection.sendTransaction(tx, [feePayer, from], { skipPreflight: false, preflightCommitment: processed }));
+  await withRetry(() => connection.confirmTransaction({ signature, blockhash, lastValidBlockHeight }, c), { attempts: 4, baseDelayMs: 350 });
+  return { signature, amountLamports: lamportsToSend };
+}
