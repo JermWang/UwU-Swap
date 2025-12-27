@@ -4,8 +4,13 @@ import { getSafeErrorMessage } from "./safeError";
 
 let pool: Pool | null = null;
 
+function isMockMode(): boolean {
+  const raw = String(process.env.CTS_MOCK_MODE ?? "").trim().toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
+}
+
 export function hasDatabase(): boolean {
-  return Boolean(process.env.DATABASE_URL);
+  return Boolean(process.env.DATABASE_URL) && !isMockMode();
 }
 
 export function getPool(): Pool {

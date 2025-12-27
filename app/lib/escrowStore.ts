@@ -66,24 +66,49 @@ function ensureMockSeeded(): void {
 
   const now = nowUnix();
 
-  const makeSig = () => bs58.encode(new Uint8Array(crypto.randomBytes(64)));
-  const makeKeypair = () => Keypair.generate();
+  const seededBytes = (label: string, length: number) => {
+    const out = new Uint8Array(length);
+    let offset = 0;
+    let i = 0;
+    while (offset < length) {
+      const h = crypto.createHash("sha256");
+      h.update(`cts_mock:${label}:${i++}`, "utf8");
+      const chunk = new Uint8Array(h.digest());
+      const take = Math.min(chunk.length, length - offset);
+      out.set(chunk.slice(0, take), offset);
+      offset += take;
+    }
+    return out;
+  };
 
-  const makeCommitmentKeypair = () => {
-    const escrow = makeKeypair();
+  const makeId = (label: string) => {
+    const h = crypto.createHash("sha256");
+    h.update(`cts_mock_id:${label}`, "utf8");
+    return h.digest("hex").slice(0, 32);
+  };
+
+  const makeKeypair = (label: string) => {
+    const seed = seededBytes(`kp:${label}`, 32);
+    return Keypair.fromSeed(seed);
+  };
+
+  const makeSig = (label: string) => bs58.encode(seededBytes(`sig:${label}`, 64));
+
+  const makeCommitmentKeypair = (label: string) => {
+    const escrow = makeKeypair(`escrow:${label}`);
     return {
       escrowPubkey: escrow.publicKey.toBase58(),
       escrowSecretKeyB58: bs58.encode(escrow.secretKey),
     };
   };
 
-  const makeWallet = () => makeKeypair().publicKey.toBase58();
+  const makeWallet = (label: string) => makeKeypair(`wallet:${label}`).publicKey.toBase58();
 
   const personal1 = (() => {
-    const { escrowPubkey, escrowSecretKeyB58 } = makeCommitmentKeypair();
-    const authority = makeWallet();
-    const destinationOnFail = makeWallet();
-    const id = crypto.randomBytes(16).toString("hex");
+    const { escrowPubkey, escrowSecretKeyB58 } = makeCommitmentKeypair("personal1");
+    const authority = makeWallet("personal1:authority");
+    const destinationOnFail = makeWallet("personal1:destinationOnFail");
+    const id = makeId("personal1");
     const createdAtUnix = now - 36 * 60 * 60;
     return {
       ...createCommitmentRecord({
@@ -102,10 +127,10 @@ function ensureMockSeeded(): void {
   })();
 
   const personal2 = (() => {
-    const { escrowPubkey, escrowSecretKeyB58 } = makeCommitmentKeypair();
-    const authority = makeWallet();
-    const destinationOnFail = makeWallet();
-    const id = crypto.randomBytes(16).toString("hex");
+    const { escrowPubkey, escrowSecretKeyB58 } = makeCommitmentKeypair("personal2");
+    const authority = makeWallet("personal2:authority");
+    const destinationOnFail = makeWallet("personal2:destinationOnFail");
+    const id = makeId("personal2");
     const createdAtUnix = now - 6 * 24 * 60 * 60;
     const resolvedAtUnix = now - 4 * 60 * 60;
     return {
@@ -122,15 +147,15 @@ function ensureMockSeeded(): void {
       createdAtUnix,
       status: "resolved_success" as const,
       resolvedAtUnix,
-      resolvedTxSig: makeSig(),
+      resolvedTxSig: makeSig("personal2:resolved_success"),
     } satisfies CommitmentRecord;
   })();
 
   const personal3 = (() => {
-    const { escrowPubkey, escrowSecretKeyB58 } = makeCommitmentKeypair();
-    const authority = makeWallet();
-    const destinationOnFail = makeWallet();
-    const id = crypto.randomBytes(16).toString("hex");
+    const { escrowPubkey, escrowSecretKeyB58 } = makeCommitmentKeypair("personal3");
+    const authority = makeWallet("personal3:authority");
+    const destinationOnFail = makeWallet("personal3:destinationOnFail");
+    const id = makeId("personal3");
     const createdAtUnix = now - 12 * 24 * 60 * 60;
     const deadlineUnix = now - 3 * 24 * 60 * 60;
     const resolvedAtUnix = now - 2 * 24 * 60 * 60;
@@ -149,21 +174,21 @@ function ensureMockSeeded(): void {
       deadlineUnix,
       status: "resolved_failure" as const,
       resolvedAtUnix,
-      resolvedTxSig: makeSig(),
+      resolvedTxSig: makeSig("personal3:resolved_failure"),
     } satisfies CommitmentRecord;
   })();
 
   const reward1 = (() => {
-    const { escrowPubkey, escrowSecretKeyB58 } = makeCommitmentKeypair();
-    const creatorPubkey = makeWallet();
-    const tokenMint = makeWallet();
-    const id = crypto.randomBytes(16).toString("hex");
+    const { escrowPubkey, escrowSecretKeyB58 } = makeCommitmentKeypair("reward1");
+    const creatorPubkey = makeWallet("reward1:creator");
+    const tokenMint = makeWallet("reward1:tokenMint");
+    const id = makeId("reward1");
     const createdAtUnix = now - 10 * 24 * 60 * 60;
 
-    const m1Id = crypto.randomBytes(8).toString("hex");
-    const m2Id = crypto.randomBytes(8).toString("hex");
-    const m3Id = crypto.randomBytes(8).toString("hex");
-    const m4Id = crypto.randomBytes(8).toString("hex");
+    const m1Id = makeId("reward1:m1");
+    const m2Id = makeId("reward1:m2");
+    const m3Id = makeId("reward1:m3");
+    const m4Id = makeId("reward1:m4");
 
     const base = createRewardCommitmentRecord({
       id,
@@ -217,7 +242,7 @@ function ensureMockSeeded(): void {
           claimableAtUnix: m1Claimable,
           becameClaimableAtUnix: m1Claimable,
           releasedAtUnix: m1Released,
-          releasedTxSig: makeSig(),
+          releasedTxSig: makeSig("reward1:m1:released"),
         },
         {
           ...m2,
@@ -243,10 +268,10 @@ function ensureMockSeeded(): void {
   })();
 
   const reward2 = (() => {
-    const { escrowPubkey, escrowSecretKeyB58 } = makeCommitmentKeypair();
-    const creatorPubkey = makeWallet();
-    const tokenMint = makeWallet();
-    const id = crypto.randomBytes(16).toString("hex");
+    const { escrowPubkey, escrowSecretKeyB58 } = makeCommitmentKeypair("reward2");
+    const creatorPubkey = makeWallet("reward2:creator");
+    const tokenMint = makeWallet("reward2:tokenMint");
+    const id = makeId("reward2");
     const createdAtUnix = now - 22 * 24 * 60 * 60;
     const releasedAtUnix = now - 7 * 24 * 60 * 60;
 
@@ -258,9 +283,9 @@ function ensureMockSeeded(): void {
       escrowSecretKeyB58,
       tokenMint,
       milestones: [
-        { id: crypto.randomBytes(8).toString("hex"), title: "Ship creator dashboard", unlockLamports: Math.floor(3 * 1_000_000_000) },
-        { id: crypto.randomBytes(8).toString("hex"), title: "Ship analytics + alerts", unlockLamports: Math.floor(4 * 1_000_000_000) },
-        { id: crypto.randomBytes(8).toString("hex"), title: "Ship gasless voting UX", unlockLamports: Math.floor(3 * 1_000_000_000) },
+        { id: makeId("reward2:m1"), title: "Ship creator dashboard", unlockLamports: Math.floor(3 * 1_000_000_000) },
+        { id: makeId("reward2:m2"), title: "Ship analytics + alerts", unlockLamports: Math.floor(4 * 1_000_000_000) },
+        { id: makeId("reward2:m3"), title: "Ship gasless voting UX", unlockLamports: Math.floor(3 * 1_000_000_000) },
       ],
     });
 
@@ -280,17 +305,17 @@ function ensureMockSeeded(): void {
           claimableAtUnix,
           becameClaimableAtUnix: claimableAtUnix,
           releasedAtUnix: releasedAtUnix - idx * 12 * 60 * 60,
-          releasedTxSig: makeSig(),
+          releasedTxSig: makeSig(`reward2:m${idx + 1}:released`),
         };
       }),
     } satisfies CommitmentRecord;
   })();
 
   const reward3 = (() => {
-    const { escrowPubkey, escrowSecretKeyB58 } = makeCommitmentKeypair();
-    const creatorPubkey = makeWallet();
-    const tokenMint = makeWallet();
-    const id = crypto.randomBytes(16).toString("hex");
+    const { escrowPubkey, escrowSecretKeyB58 } = makeCommitmentKeypair("reward3");
+    const creatorPubkey = makeWallet("reward3:creator");
+    const tokenMint = makeWallet("reward3:tokenMint");
+    const id = makeId("reward3");
     const createdAtUnix = now - 2 * 24 * 60 * 60;
 
     const base = createRewardCommitmentRecord({
@@ -301,8 +326,8 @@ function ensureMockSeeded(): void {
       escrowSecretKeyB58,
       tokenMint,
       milestones: [
-        { id: crypto.randomBytes(8).toString("hex"), title: "Ship patch release", unlockLamports: Math.floor(0.4 * 1_000_000_000) },
-        { id: crypto.randomBytes(8).toString("hex"), title: "Ship marketing push", unlockLamports: Math.floor(0.6 * 1_000_000_000) },
+        { id: makeId("reward3:m1"), title: "Ship patch release", unlockLamports: Math.floor(0.4 * 1_000_000_000) },
+        { id: makeId("reward3:m2"), title: "Ship marketing push", unlockLamports: Math.floor(0.6 * 1_000_000_000) },
       ],
     });
 
@@ -331,7 +356,8 @@ function ensureMockSeeded(): void {
       byMilestone.set(milestoneId, signers);
     }
     while (signers.size < count) {
-      signers.add(makeKeypair().publicKey.toBase58());
+      const idx = signers.size + 1;
+      signers.add(makeKeypair(`signal:${commitmentId}:${milestoneId}:${idx}`).publicKey.toBase58());
     }
   };
 
