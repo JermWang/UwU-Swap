@@ -8,6 +8,9 @@ import AsciiWaves from "./components/AsciiWaves";
 export const metadata = {
   title: "Commit To Ship",
   description: "Custodial SOL escrow commitments",
+  icons: {
+    icon: [{ url: "/favicon.svg", type: "image/svg+xml" }],
+  },
 };
 
 export default function RootLayout({
