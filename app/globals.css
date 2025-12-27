@@ -968,7 +968,8 @@ html[data-skin="app"] .ascii-waves {
 
  body[data-skin="landing"] .landingCtas .landingCtaSecondary {
   color: #fff;
-  border-color: rgba(0, 0, 0, 0.18);
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.22);
  }
 
 @media (max-width: 520px) {
@@ -2010,6 +2011,10 @@ body[data-skin="app"] .timelineSelect {
   color: var(--fg);
 }
 
+body[data-skin="app"] .timelineSearch::placeholder {
+  color: rgba(255, 255, 255, 0.46);
+}
+
 body[data-skin="app"] .commitInput:focus,
 body[data-skin="app"] .timelineSearch:focus {
   border-color: rgba(255, 255, 255, 0.38);
@@ -2022,9 +2027,22 @@ body[data-skin="app"] .commitBtnSecondary,
 body[data-skin="app"] .commitBtnTertiary,
 body[data-skin="app"] .timelineActionBtn,
 body[data-skin="app"] .timelineRefresh {
-  background: rgba(0, 0, 0, 0.0);
+  background: rgba(255, 255, 255, 0.06);
   border-color: rgba(255, 255, 255, 0.18);
-  color: rgba(255, 255, 255, 0.84);
+  color: rgba(255, 255, 255, 0.92);
+}
+
+body[data-skin="app"] .timelineActionBtn:hover,
+body[data-skin="app"] .timelineRefresh:hover {
+  background: rgba(255, 255, 255, 0.10);
+  border-color: rgba(255, 255, 255, 0.30);
+  color: #fff;
+}
+
+body[data-skin="app"] .timelineActionBtn:disabled,
+body[data-skin="app"] .timelineRefresh:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 body[data-skin="app"] .commitWizardStepIndex {
@@ -2050,14 +2068,37 @@ body[data-skin="app"] .commitWizardStepActive .commitWizardStepLabel {
 }
 
 body[data-skin="app"] .timelineFilter {
-  background: rgba(0, 0, 0, 0.0);
+  background: rgba(255, 255, 255, 0.06);
   border-color: rgba(255, 255, 255, 0.18);
-  color: rgba(255, 255, 255, 0.74);
+  color: rgba(255, 255, 255, 0.88);
 }
 
 body[data-skin="app"] .timelineFilterActive {
   background: rgba(255, 255, 255, 0.10);
   border-color: rgba(255, 255, 255, 0.22);
+  color: #fff;
+}
+
+body[data-skin="app"] .timelineFilter:hover {
+  background: rgba(255, 255, 255, 0.10);
+  border-color: rgba(255, 255, 255, 0.30);
+  color: #fff;
+}
+
+body[data-skin="app"] .timelineFilter:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+
+body[data-skin="app"] .timelineChip {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.18);
+  color: rgba(255, 255, 255, 0.78);
+}
+
+body[data-skin="app"] .timelineChipReward {
+  border-color: rgba(255, 255, 255, 0.30);
   color: #fff;
 }
 
