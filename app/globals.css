@@ -967,7 +967,7 @@ html[data-skin="app"] .ascii-waves {
 }
 
  body[data-skin="landing"] .landingCtas .landingCtaSecondary {
-  color: #000;
+  color: #fff;
   border-color: rgba(0, 0, 0, 0.18);
  }
 
