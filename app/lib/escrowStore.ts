@@ -7,6 +7,8 @@ import { getPool, hasDatabase } from "./db";
 
 export type CommitmentKind = "personal" | "creator_reward";
 
+export type CreatorFeeMode = "managed" | "assisted";
+
 export type CommitmentStatus =
   | "created"
   | "resolving"
@@ -41,6 +43,7 @@ export type CommitmentRecord = {
   escrowSecretKey: string;
   kind: CommitmentKind;
   creatorPubkey?: string;
+  creatorFeeMode?: CreatorFeeMode;
   tokenMint?: string;
   totalFundedLamports: number;
   unlockedLamports: number;
@@ -467,6 +470,7 @@ async function ensureSchema(): Promise<void> {
       escrow_secret_key text not null,
       kind text not null default 'personal',
       creator_pubkey text null,
+      creator_fee_mode text null,
       token_mint text null,
       total_funded_lamports bigint not null default 0,
       unlocked_lamports bigint not null default 0,
@@ -484,6 +488,7 @@ async function ensureSchema(): Promise<void> {
   await pool.query(`alter table commitments add column if not exists statement text null;`);
   await pool.query(`alter table commitments add column if not exists kind text not null default 'personal';`);
   await pool.query(`alter table commitments add column if not exists creator_pubkey text null;`);
+  await pool.query(`alter table commitments add column if not exists creator_fee_mode text null;`);
   await pool.query(`alter table commitments add column if not exists token_mint text null;`);
   await pool.query(`alter table commitments add column if not exists total_funded_lamports bigint not null default 0;`);
   await pool.query(`alter table commitments add column if not exists unlocked_lamports bigint not null default 0;`);
@@ -581,6 +586,7 @@ function rowToRecord(row: any): CommitmentRecord {
     escrowSecretKey: row.escrow_secret_key,
     kind: (row.kind ?? "personal") as CommitmentKind,
     creatorPubkey: row.creator_pubkey ?? undefined,
+    creatorFeeMode: row.creator_fee_mode == null ? undefined : (String(row.creator_fee_mode) as CreatorFeeMode),
     tokenMint: row.token_mint ?? undefined,
     totalFundedLamports: Number(row.total_funded_lamports ?? 0),
     unlockedLamports: Number(row.unlocked_lamports ?? 0),
@@ -629,6 +635,7 @@ export function createRewardCommitmentRecord(input: {
   escrowSecretKeyB58: string;
   milestones: Array<{ id: string; title: string; unlockLamports: number }>;
   tokenMint?: string;
+  creatorFeeMode?: CreatorFeeMode;
 }): CommitmentRecord {
   return {
     id: input.id,
@@ -641,6 +648,7 @@ export function createRewardCommitmentRecord(input: {
     escrowSecretKey: encryptSecret(input.escrowSecretKeyB58),
     kind: "creator_reward",
     creatorPubkey: input.creatorPubkey,
+    creatorFeeMode: input.creatorFeeMode ?? "assisted",
     tokenMint: input.tokenMint,
     totalFundedLamports: 0,
     unlockedLamports: 0,
@@ -661,7 +669,29 @@ export function publicView(r: CommitmentRecord): Omit<CommitmentRecord, "escrowS
 }
 
 export function getEscrowSecretKeyB58(r: CommitmentRecord): string {
-  return decryptSecret(r.escrowSecretKey);
+  const raw = decryptSecret(r.escrowSecretKey);
+  if (raw.startsWith("privy:")) {
+    throw new Error("Escrow key is managed by Privy");
+  }
+  return raw;
+}
+
+export type EscrowSignerRef =
+  | { kind: "local"; escrowSecretKeyB58: string }
+  | { kind: "privy"; walletId: string };
+
+export function getEscrowSignerRef(r: CommitmentRecord): EscrowSignerRef {
+  const raw = decryptSecret(r.escrowSecretKey);
+  const trimmed = String(raw ?? "").trim();
+
+  if (trimmed.startsWith("privy:")) {
+    const walletId = trimmed.slice("privy:".length).trim();
+    if (!walletId) throw new Error("Invalid Privy escrow reference");
+    return { kind: "privy", walletId };
+  }
+
+  validateEscrowSecretKeyB58(trimmed);
+  return { kind: "local", escrowSecretKeyB58: trimmed };
 }
 
 export async function insertCommitment(r: CommitmentRecord): Promise<void> {
@@ -677,7 +707,7 @@ export async function insertCommitment(r: CommitmentRecord): Promise<void> {
     `insert into commitments (
       id, statement, authority, destination_on_fail, amount_lamports, deadline_unix,
       escrow_pubkey, escrow_secret_key,
-      kind, creator_pubkey, token_mint, total_funded_lamports, unlocked_lamports, milestones_json,
+      kind, creator_pubkey, creator_fee_mode, token_mint, total_funded_lamports, unlocked_lamports, milestones_json,
       status, created_at_unix, resolved_at_unix, resolved_tx_sig
     ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
     [
@@ -691,6 +721,7 @@ export async function insertCommitment(r: CommitmentRecord): Promise<void> {
       r.escrowSecretKey,
       r.kind,
       r.creatorPubkey ?? null,
+      r.creatorFeeMode ?? null,
       r.tokenMint ?? null,
       String(r.totalFundedLamports ?? 0),
       String(r.unlockedLamports ?? 0),

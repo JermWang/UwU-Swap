@@ -11,6 +11,8 @@ type ProfileSummary = {
   avatarUrl?: string | null;
 };
 
+type CreatorFeeMode = "managed" | "assisted";
+
 type TimelineEventType =
   | "commitment_created"
   | "commitment_resolved_success"
@@ -25,6 +27,11 @@ type TimelineEvent = {
   type: TimelineEventType;
   kind: "personal" | "creator_reward";
   timestampUnix: number;
+
+  creatorFeeMode?: CreatorFeeMode;
+  totalFundedLamports?: number;
+  milestoneTotalUnlockLamports?: number;
+
   commitmentId: string;
   statement?: string;
   status: string;
@@ -58,6 +65,7 @@ type CommitmentSummary = {
   resolvedTxSig?: string;
 
   creatorPubkey?: string | null;
+  creatorFeeMode?: CreatorFeeMode | null;
   tokenMint?: string | null;
   totalFundedLamports?: number;
   unlockedLamports?: number;
@@ -81,6 +89,12 @@ type CommitmentStatusResponse = {
 function lamportsToSol(lamports: number): string {
   const sol = lamports / 1_000_000_000;
   return new Intl.NumberFormat("en-US", { maximumFractionDigits: 6 }).format(sol);
+}
+
+function clamp01(n: number): number {
+  if (n < 0) return 0;
+  if (n > 1) return 1;
+  return n;
 }
 
 function localInputToUnix(value: string): number {
@@ -111,6 +125,7 @@ export default function Home() {
   const [amountSol, setAmountSol] = useState("0.01");
   const [creatorPubkey, setCreatorPubkey] = useState("");
   const [rewardTokenMint, setRewardTokenMint] = useState("");
+  const [rewardCreatorFeeMode, setRewardCreatorFeeMode] = useState<CreatorFeeMode>("assisted");
   const [rewardMilestones, setRewardMilestones] = useState<Array<{ title: string; unlockSol: string }>>([
     { title: "Ship milestone 1", unlockSol: "0.25" },
     { title: "Ship milestone 2", unlockSol: "0.25" },
@@ -180,6 +195,8 @@ export default function Home() {
       if (!deadlineLocal.trim().length) issues.push("Select a deadline.");
     } else {
       if (!creatorPubkey.trim().length) issues.push("Enter the creator wallet address.");
+      if (!rewardTokenMint.trim().length) issues.push("Enter the token mint address.");
+      if (!devVerify) issues.push("Verify your dev wallet on-chain.");
       const anyMilestones = rewardMilestonesParsed.some((m) => m.title.length > 0);
       if (!anyMilestones) issues.push("Add at least one milestone title.");
       const anyAmounts = rewardMilestonesParsed.some((m) => m.unlockLamports > 0);
@@ -534,6 +551,7 @@ export default function Home() {
             kind: "creator_reward" as const,
             statement,
             creatorPubkey: creatorPubkey.trim(),
+            creatorFeeMode: rewardCreatorFeeMode,
             tokenMint: rewardTokenMint.trim().length ? rewardTokenMint.trim() : undefined,
             devVerify,
             milestones,
@@ -731,7 +749,11 @@ export default function Home() {
                         </div>
 
                         <p className="heroLead">
-                          Lock your pump.fun dev fees in on-chain escrow. Set milestones; holders vote to approve releases. If you miss, fees stay locked or route to the chosen destination.
+                          Lock your{" "}
+                          <a href="https://pump.fun" target="_blank" rel="noreferrer noopener">
+                            pump.fun
+                          </a>{" "}
+                          dev fees in on-chain escrow. Set milestones; holders vote to approve releases. If you miss, fees stay locked or route to the chosen destination.
                         </p>
 
                         <div className="landingCtas">
@@ -1008,6 +1030,22 @@ export default function Home() {
                                   Update authority: {devVerifyResult.updateAuthority ?? "None"}
                                 </div>
                               ) : null}
+
+                              <div className="commitField" style={{ marginTop: 18 }}>
+                                <div className="commitFieldLabel">Creator Fee Escrow Mode</div>
+                                <select
+                                  className="commitInput"
+                                  value={rewardCreatorFeeMode}
+                                  onChange={(e) => setRewardCreatorFeeMode(e.target.value as CreatorFeeMode)}
+                                  disabled={busy != null}
+                                >
+                                  <option value="managed">Managed Auto-Escrow (Verified)</option>
+                                  <option value="assisted">Assisted (Self-custody)</option>
+                                </select>
+                                <div className="commitCardDesc" style={{ marginTop: 10 }}>
+                                  Managed permits CTS to auto-claim and auto-escrow fees. Assisted means CTS can help, but escrow deposits are voluntary.
+                                </div>
+                              </div>
                             </section>
 
                             <section className="commitCard">
@@ -1113,6 +1151,7 @@ export default function Home() {
                         <div className="commitPreviewTitle">{statement.trim().length ? statement.trim() : "Untitled commitment"}</div>
                         <div className="commitPreviewChips">
                           <span className={`commitPreviewChip ${commitKind === "creator_reward" ? "commitPreviewChipReward" : ""}`}>{commitKind === "creator_reward" ? "reward" : "personal"}</span>
+                          {commitKind === "creator_reward" ? <span className="commitPreviewChip">{rewardCreatorFeeMode === "managed" ? "auto-escrow" : "assisted"}</span> : null}
                           {commitIssues.length === 0 ? <span className="commitPreviewChip commitPreviewChipReady">ready</span> : <span className="commitPreviewChip">needs input</span>}
                         </div>
 
@@ -1223,11 +1262,34 @@ export default function Home() {
                                         <div className="commitListItemMeta">
                                           <span className="commitListItemStatus">{c.status}</span>
                                           {c.kind === "creator_reward" ? (
-                                            <span>Funded: {lamportsToSol(c.totalFundedLamports ?? 0)} SOL</span>
+                                            <>
+                                              <span className={`commitListItemBadge ${String(c.creatorFeeMode ?? "assisted") === "managed" ? "commitListItemBadgeManaged" : ""}`}>
+                                                {String(c.creatorFeeMode ?? "assisted") === "managed" ? "auto-escrow" : "assisted"}
+                                              </span>
+                                              <span>
+                                                Escrowed: {lamportsToSol(c.totalFundedLamports ?? 0)} / {lamportsToSol((c.milestones ?? []).reduce((acc, m) => acc + Number(m.unlockLamports || 0), 0))} SOL
+                                              </span>
+                                            </>
                                           ) : (
                                             <span>Deadline: {new Date(c.deadlineUnix * 1000).toLocaleDateString()}</span>
                                           )}
                                         </div>
+
+                                        {c.kind === "creator_reward" ? (
+                                          (() => {
+                                            const funded = Number(c.totalFundedLamports ?? 0);
+                                            const total = (c.milestones ?? []).reduce((acc, m) => acc + Number(m.unlockLamports || 0), 0);
+                                            const pct = total > 0 ? clamp01(funded / total) : 0;
+                                            return (
+                                              <div className="commitCompliance">
+                                                <div className="commitComplianceBar" aria-hidden="true">
+                                                  <div className="commitComplianceFill" style={{ width: `${Math.round(pct * 100)}%` }} />
+                                                </div>
+                                                <div className="commitComplianceText">Compliance: {Math.round(pct * 100)}%</div>
+                                              </div>
+                                            );
+                                          })()
+                                        ) : null}
                                       </div>
                                       <div className="commitListItemActions">
                                         <button className="commitBtnSecondary commitBtnSmall" onClick={() => router.push(`/commit/${c.id}`)}>
@@ -1384,11 +1446,34 @@ export default function Home() {
                                   <span className={`timelineChip ${e.kind === "creator_reward" ? "timelineChipReward" : ""}`}>
                                     {e.kind === "creator_reward" ? "reward" : "personal"}
                                   </span>
+                                  {e.kind === "creator_reward" ? (
+                                    <span className={`timelineChip ${String(e.creatorFeeMode ?? "assisted") === "managed" ? "timelineChipModeManaged" : "timelineChipModeAssisted"}`}>
+                                      {String(e.creatorFeeMode ?? "assisted") === "managed" ? "auto-escrow" : "assisted"}
+                                    </span>
+                                  ) : null}
                                   <span className="timelineChip timelineChipType">{typeLabel(e.type)}</span>
                                   <span className="timelineChip timelineChipStatus">{e.status}</span>
                                 </div>
                                 <div className="timelineReceiptTitle">{primaryTitle}</div>
                                 {e.milestoneTitle ? <div className="timelineReceiptSub">{e.milestoneTitle}</div> : null}
+
+                                {e.kind === "creator_reward" ? (
+                                  (() => {
+                                    const funded = Number(e.totalFundedLamports ?? 0);
+                                    const total = Number(e.milestoneTotalUnlockLamports ?? 0);
+                                    const pct = total > 0 ? clamp01(funded / total) : 0;
+                                    return (
+                                      <div className="timelineCompliance">
+                                        <div className="timelineComplianceBar" aria-hidden="true">
+                                          <div className="timelineComplianceFill" style={{ width: `${Math.round(pct * 100)}%` }} />
+                                        </div>
+                                        <div className="timelineComplianceText">
+                                          Escrowed {fmtSol(funded)} / {fmtSol(total)} SOL ({Math.round(pct * 100)}%)
+                                        </div>
+                                      </div>
+                                    );
+                                  })()
+                                ) : null}
                               </div>
 
                               <div className="timelineReceiptRight">

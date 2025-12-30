@@ -40,6 +40,7 @@ type Props = {
   explorerUrl: string;
 
   creatorPubkey?: string | null;
+  creatorFeeMode?: "managed" | "assisted" | null;
   tokenMint?: string | null;
   milestones?: RewardMilestone[];
   approvalCounts?: RewardMilestoneApprovalCounts;
@@ -47,6 +48,7 @@ type Props = {
   totalFundedLamports?: number;
   unlockedLamports?: number;
   balanceLamports?: number;
+  milestoneTotalUnlockLamports?: number;
   nowUnix?: number;
 };
 
@@ -105,6 +107,12 @@ async function jsonPost(path: string, body: unknown): Promise<any> {
 function fmtSol(lamports: number): string {
   const sol = lamports / 1_000_000_000;
   return new Intl.NumberFormat("en-US", { maximumFractionDigits: 6 }).format(sol);
+}
+
+function clamp01(n: number): number {
+  if (n < 0) return 0;
+  if (n > 1) return 1;
+  return n;
 }
 
 function failureClaimMessage(input: { commitmentId: string; walletPubkey: string; timestampUnix: number }): string {
@@ -825,6 +833,37 @@ export default function CommitDashboardClient(props: Props) {
             </div>
           </>
         )}
+
+        {kind === "creator_reward" ? (
+          <div className={styles.receiptBlock}>
+            <div className={styles.receiptLabel}>Creator fee mode</div>
+            <div className={styles.smallNote} style={{ marginTop: 8 }}>
+              {String(props.creatorFeeMode ?? "assisted") === "managed" ? "Auto-escrow (managed)" : "Assisted (self-custody)"}
+            </div>
+            <div className={styles.smallNote} style={{ marginTop: 6 }}>
+              {String(props.creatorFeeMode ?? "assisted") === "managed" ? "Fees can be auto-claimed and auto-escrowed." : "Deposits to escrow are voluntary in this mode."}
+            </div>
+
+            {(() => {
+              const funded = Number(props.totalFundedLamports ?? 0);
+              const total =
+                props.milestoneTotalUnlockLamports != null
+                  ? Number(props.milestoneTotalUnlockLamports)
+                  : (props.milestones ?? []).reduce((acc, m) => acc + Number(m.unlockLamports || 0), 0);
+              const pct = total > 0 ? clamp01(funded / total) : 0;
+              return (
+                <div style={{ marginTop: 12 }}>
+                  <div className={styles.smallNote}>
+                    Escrowed {fmtSol(funded)} / {fmtSol(total)} SOL ({Math.round(pct * 100)}%)
+                  </div>
+                  <div className={styles.complianceTrack} aria-hidden="true" style={{ marginTop: 8 }}>
+                    <div className={styles.complianceFill} style={{ width: `${Math.round(pct * 100)}%` }} />
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+        ) : null}
 
         {(kind === "creator_reward" || canMarkSuccess || canMarkFailure) ? (
           <div className={styles.receiptBlock}>

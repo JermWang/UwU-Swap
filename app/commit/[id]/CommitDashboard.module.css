@@ -98,6 +98,23 @@
   margin-top: 2px;
 }
 
+.heroPills {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.modePill {
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.86);
+}
+
+.modePillManaged {
+  border-color: rgba(255, 255, 255, 0.34);
+  color: #fff;
+}
+
 .heroMetaLines {
   text-align: right;
   display: flex;
@@ -107,6 +124,34 @@
   font-weight: 500;
   color: var(--muted);
   line-height: 1.5;
+}
+
+.complianceWrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.complianceTrack {
+  width: min(320px, 100%);
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.10);
+  overflow: hidden;
+}
+
+.complianceFill {
+  height: 100%;
+  border-radius: 999px;
+  background: #fff;
+}
+
+.complianceText {
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--muted);
+  text-align: right;
 }
 
 .heroBottom {
@@ -572,6 +617,30 @@
   border-radius: 18px;
   border: 1px solid var(--border);
   background: rgba(0, 0, 0, 0.92);
+}
+
+.rewardModePill {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.0);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--fg);
+}
+
+.complianceMeter {
+  display: flex;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.0);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--fg);
 }
 
 @media (max-width: 720px) {

@@ -2,6 +2,7 @@ import { Connection, Keypair, PublicKey, SystemProgram, Transaction } from "@sol
 import bs58 from "bs58";
 
 import { getConnection as getConnectionRpc, getServerCommitment, withRetry } from "./rpc";
+import { privySignAndSendSolanaTransaction } from "./privy";
 
 export function getConnection(): Connection {
   return getConnectionRpc();
@@ -116,6 +117,124 @@ export async function getTokenMetadataUpdateAuthorityBase58(input: { connection:
 
   const updateAuthorityBytes = acct.data.subarray(1, 33);
   return new PublicKey(updateAuthorityBytes).toBase58();
+}
+
+export function getSolanaCaip2(): string {
+  const explicit = String(process.env.SOLANA_CAIP2 ?? "").trim();
+  if (explicit) return explicit;
+
+  const cluster = String(process.env.NEXT_PUBLIC_SOLANA_CLUSTER ?? process.env.SOLANA_CLUSTER ?? "mainnet-beta").trim();
+  if (cluster === "devnet") return "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1";
+  if (cluster === "testnet") return "solana:4uhcVJyU9pJkvQyS88uRDiswHXSCkY3z";
+  return "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
+}
+
+export async function transferLamportsFromPrivyWallet(opts: {
+  connection: Connection;
+  walletId: string;
+  fromPubkey: PublicKey;
+  to: PublicKey;
+  lamports: number;
+}): Promise<{ signature: string; amountLamports: number }> {
+  const { connection, fromPubkey, to } = opts;
+  const lamports = Number(opts.lamports);
+  if (!Number.isFinite(lamports) || lamports <= 0) throw new Error("Invalid lamports");
+
+  const feePayer = await getFeePayerKeypair();
+  const c = getServerCommitment();
+  const processed = "processed" as const;
+  const balance = await withRetry(() => connection.getBalance(fromPubkey, c));
+  if (balance < lamports) throw new Error("Insufficient balance");
+
+  const { blockhash, lastValidBlockHeight } = await withRetry(() => connection.getLatestBlockhash(processed));
+  const tx = new Transaction();
+  tx.recentBlockhash = blockhash;
+  tx.lastValidBlockHeight = lastValidBlockHeight;
+  tx.feePayer = feePayer ? feePayer.publicKey : fromPubkey;
+  tx.add(
+    SystemProgram.transfer({
+      fromPubkey,
+      toPubkey: to,
+      lamports,
+    })
+  );
+
+  if (!feePayer) {
+    const msg = tx.compileMessage();
+    const fee = await withRetry(() => connection.getFeeForMessage(msg, c));
+    const feeLamports = fee.value ?? 5000;
+    if (balance < lamports + feeLamports) throw new Error("Insufficient balance to cover amount + fees");
+  } else {
+    const feePayerBalance = await withRetry(() => connection.getBalance(feePayer.publicKey, c));
+    const msg = tx.compileMessage();
+    const fee = await withRetry(() => connection.getFeeForMessage(msg, c));
+    const feeLamports = fee.value ?? 5000;
+    if (feePayerBalance < feeLamports) throw new Error("Insufficient fee payer balance");
+    tx.partialSign(feePayer);
+  }
+
+  const txBytes = tx.serialize({ requireAllSignatures: false, verifySignatures: false });
+  const txBase64 = Buffer.from(txBytes).toString("base64");
+
+  const sent = await privySignAndSendSolanaTransaction({
+    walletId: String(opts.walletId),
+    caip2: getSolanaCaip2(),
+    transactionBase64: txBase64,
+  });
+
+  return { signature: sent.signature, amountLamports: lamports };
+}
+
+export async function transferAllLamportsFromPrivyWallet(opts: {
+  connection: Connection;
+  walletId: string;
+  fromPubkey: PublicKey;
+  to: PublicKey;
+}): Promise<{ signature: string; amountLamports: number }> {
+  const { connection, fromPubkey, to } = opts;
+
+  const feePayer = await getFeePayerKeypair();
+  const c = getServerCommitment();
+  const processed = "processed" as const;
+  const balance = await withRetry(() => connection.getBalance(fromPubkey, c));
+  if (balance <= 0) throw new Error("No lamports to transfer");
+
+  const { blockhash, lastValidBlockHeight } = await withRetry(() => connection.getLatestBlockhash(processed));
+  const tx = new Transaction();
+  tx.recentBlockhash = blockhash;
+  tx.lastValidBlockHeight = lastValidBlockHeight;
+  tx.feePayer = feePayer ? feePayer.publicKey : fromPubkey;
+
+  let lamportsToSend = balance;
+  tx.add(SystemProgram.transfer({ fromPubkey, toPubkey: to, lamports: lamportsToSend }));
+
+  if (!feePayer) {
+    const msg = tx.compileMessage();
+    const fee = await withRetry(() => connection.getFeeForMessage(msg, c));
+    const feeLamports = fee.value ?? 5000;
+    lamportsToSend = balance - feeLamports;
+    if (lamportsToSend <= 0) throw new Error("Insufficient balance to cover fees");
+
+    tx.instructions[0] = SystemProgram.transfer({ fromPubkey, toPubkey: to, lamports: lamportsToSend });
+  } else {
+    const feePayerBalance = await withRetry(() => connection.getBalance(feePayer.publicKey, c));
+    const msg = tx.compileMessage();
+    const fee = await withRetry(() => connection.getFeeForMessage(msg, c));
+    const feeLamports = fee.value ?? 5000;
+    if (feePayerBalance < feeLamports) throw new Error("Insufficient fee payer balance");
+    tx.partialSign(feePayer);
+  }
+
+  const txBytes = tx.serialize({ requireAllSignatures: false, verifySignatures: false });
+  const txBase64 = Buffer.from(txBytes).toString("base64");
+
+  const sent = await privySignAndSendSolanaTransaction({
+    walletId: String(opts.walletId),
+    caip2: getSolanaCaip2(),
+    transactionBase64: txBase64,
+  });
+
+  return { signature: sent.signature, amountLamports: lamportsToSend };
 }
 
 async function getFeePayerKeypair(): Promise<Keypair | null> {

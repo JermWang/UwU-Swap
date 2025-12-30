@@ -2318,6 +2318,20 @@ body[data-skin="app"] .commitTypeCardActive {
   color: #000;
 }
 
+.timelineChipModeManaged {
+  border-color: #000;
+  color: #000;
+}
+
+.timelineChipModeAssisted {
+  border-color: var(--border);
+}
+
+body[data-skin="app"] .timelineChipModeManaged {
+  border-color: rgba(255, 255, 255, 0.30);
+  color: #fff;
+}
+
 .timelineChipType {
   background: rgba(0, 0, 0, 0.02);
 }
@@ -2336,6 +2350,41 @@ body[data-skin="app"] .commitTypeCardActive {
 .timelineReceiptSub {
   margin-top: 6px;
   font-size: 13px;
+  color: var(--muted);
+}
+
+.timelineCompliance {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.timelineComplianceBar {
+  width: min(280px, 100%);
+  height: 6px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.10);
+}
+
+body[data-skin="app"] .timelineComplianceBar {
+  background: rgba(255, 255, 255, 0.10);
+}
+
+.timelineComplianceFill {
+  height: 100%;
+  border-radius: 999px;
+  background: #000;
+}
+
+body[data-skin="app"] .timelineComplianceFill {
+  background: #fff;
+}
+
+.timelineComplianceText {
+  font-size: 12px;
+  font-weight: 650;
   color: var(--muted);
 }
 
@@ -2984,6 +3033,73 @@ body[data-skin="app"] .timelineProfileAvatarFallback {
   font-size: 13px;
   color: var(--muted);
   flex-wrap: wrap;
+}
+
+.commitListItemBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  background: rgba(0, 0, 0, 0.02);
+  color: rgba(0, 0, 0, 0.72);
+}
+
+body[data-skin="app"] .commitListItemBadge {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.18);
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.commitListItemBadgeManaged {
+  border-color: #000;
+  color: #000;
+  background: rgba(0, 0, 0, 0.0);
+}
+
+body[data-skin="app"] .commitListItemBadgeManaged {
+  border-color: rgba(255, 255, 255, 0.30);
+  color: #fff;
+}
+
+.commitCompliance {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.commitComplianceBar {
+  width: 140px;
+  height: 6px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.10);
+}
+
+body[data-skin="app"] .commitComplianceBar {
+  background: rgba(255, 255, 255, 0.10);
+}
+
+.commitComplianceFill {
+  height: 100%;
+  border-radius: 999px;
+  background: #000;
+}
+
+body[data-skin="app"] .commitComplianceFill {
+  background: #fff;
+}
+
+.commitComplianceText {
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--muted);
 }
 
 .commitListItemStatus {

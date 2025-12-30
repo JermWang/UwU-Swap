@@ -4,7 +4,7 @@ import { Keypair, PublicKey } from "@solana/web3.js";
 import bs58 from "bs58";
 import nacl from "tweetnacl";
 
-import { CommitmentKind, createCommitmentRecord, createRewardCommitmentRecord, insertCommitment, listCommitments, publicView } from "../../lib/escrowStore";
+import { CommitmentKind, CreatorFeeMode, createCommitmentRecord, createRewardCommitmentRecord, insertCommitment, listCommitments, publicView } from "../../lib/escrowStore";
 import { getConnection, getMintAuthorityBase58, getTokenMetadataUpdateAuthorityBase58 } from "../../lib/solana";
 import { getSafeErrorMessage } from "../../lib/safeError";
 
@@ -31,6 +31,9 @@ export async function POST(req: Request) {
 
     if (kind === "creator_reward") {
       const creator = new PublicKey(String(body.creatorPubkey ?? ""));
+
+      const rawMode = typeof body.creatorFeeMode === "string" ? body.creatorFeeMode.trim() : "";
+      const creatorFeeMode: CreatorFeeMode | undefined = rawMode === "managed" || rawMode === "assisted" ? (rawMode as CreatorFeeMode) : undefined;
 
       const tokenMintRaw = typeof body.tokenMint === "string" ? body.tokenMint.trim() : "";
       if (!tokenMintRaw) {
@@ -103,6 +106,7 @@ export async function POST(req: Request) {
         escrowSecretKeyB58: bs58.encode(escrow.secretKey),
         milestones,
         tokenMint,
+        creatorFeeMode,
       });
 
       await insertCommitment(record);
@@ -112,6 +116,7 @@ export async function POST(req: Request) {
         kind: record.kind,
         statement: record.statement ?? null,
         creatorPubkey: record.creatorPubkey ?? null,
+        creatorFeeMode: record.creatorFeeMode ?? null,
         tokenMint: record.tokenMint ?? null,
         escrowPubkey: record.escrowPubkey,
         totalFundedLamports: record.totalFundedLamports,

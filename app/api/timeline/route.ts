@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { CommitmentKind, CommitmentRecord, RewardMilestone, listCommitments, publicView } from "../../lib/escrowStore";
+import { CommitmentKind, CommitmentRecord, CreatorFeeMode, RewardMilestone, listCommitments, publicView } from "../../lib/escrowStore";
 import { getSafeErrorMessage } from "../../lib/safeError";
 
 export const runtime = "nodejs";
@@ -19,6 +19,11 @@ export type TimelineEvent = {
   type: TimelineEventType;
   kind: CommitmentKind;
   timestampUnix: number;
+
+  creatorFeeMode?: CreatorFeeMode;
+
+  totalFundedLamports?: number;
+  milestoneTotalUnlockLamports?: number;
 
   commitmentId: string;
   statement?: string;
@@ -52,6 +57,8 @@ function pushRewardMilestoneEvents(input: { record: CommitmentRecord; events: Ti
   const { record, events } = input;
   const milestones: RewardMilestone[] = Array.isArray(record.milestones) ? (record.milestones as RewardMilestone[]) : [];
 
+  const milestoneTotalUnlockLamports = milestones.reduce((acc, m) => acc + Number(m.unlockLamports || 0), 0);
+
   for (const m of milestones) {
     if (m.completedAtUnix != null) {
       events.push({
@@ -59,6 +66,9 @@ function pushRewardMilestoneEvents(input: { record: CommitmentRecord; events: Ti
         type: "reward_milestone_completed",
         kind: record.kind,
         timestampUnix: Number(m.completedAtUnix),
+        creatorFeeMode: record.creatorFeeMode,
+        totalFundedLamports: Number(record.totalFundedLamports ?? 0),
+        milestoneTotalUnlockLamports,
         commitmentId: record.id,
         statement: record.statement,
         status: record.status,
@@ -85,6 +95,9 @@ function pushRewardMilestoneEvents(input: { record: CommitmentRecord; events: Ti
         type: "reward_milestone_claimable",
         kind: record.kind,
         timestampUnix: becameClaimableAtUnix,
+        creatorFeeMode: record.creatorFeeMode,
+        totalFundedLamports: Number(record.totalFundedLamports ?? 0),
+        milestoneTotalUnlockLamports,
         commitmentId: record.id,
         statement: record.statement,
         status: record.status,
@@ -104,6 +117,9 @@ function pushRewardMilestoneEvents(input: { record: CommitmentRecord; events: Ti
         type: "reward_milestone_released",
         kind: record.kind,
         timestampUnix: Number(m.releasedAtUnix),
+        creatorFeeMode: record.creatorFeeMode,
+        totalFundedLamports: Number(record.totalFundedLamports ?? 0),
+        milestoneTotalUnlockLamports,
         commitmentId: record.id,
         statement: record.statement,
         status: record.status,
@@ -133,6 +149,9 @@ function pushRewardMilestoneEvents(input: { record: CommitmentRecord; events: Ti
         type: "reward_commitment_completed",
         kind: record.kind,
         timestampUnix: completedAt,
+        creatorFeeMode: record.creatorFeeMode,
+        totalFundedLamports: Number(record.totalFundedLamports ?? 0),
+        milestoneTotalUnlockLamports,
         commitmentId: record.id,
         statement: record.statement,
         status: record.status,
@@ -155,6 +174,11 @@ export async function GET(req: Request) {
     const events: TimelineEvent[] = [];
 
     for (const record of rows) {
+      const milestoneTotalUnlockLamports =
+        record.kind === "creator_reward" && Array.isArray(record.milestones)
+          ? (record.milestones as RewardMilestone[]).reduce((acc, m) => acc + Number(m.unlockLamports || 0), 0)
+          : undefined;
+
       const base = {
         kind: record.kind,
         commitmentId: record.id,
@@ -164,6 +188,9 @@ export async function GET(req: Request) {
         authority: record.authority,
         destinationOnFail: record.destinationOnFail,
         creatorPubkey: record.creatorPubkey,
+        creatorFeeMode: record.creatorFeeMode,
+        totalFundedLamports: record.kind === "creator_reward" ? Number(record.totalFundedLamports ?? 0) : undefined,
+        milestoneTotalUnlockLamports,
       };
 
       events.push({

@@ -132,6 +132,10 @@ export default async function CommitDashboardPage({ params }: { params: { id: st
     const nextUnlockLamports = nextMilestone ? Number(nextMilestone.unlockLamports || 0) : 0;
     const nextCoverage = nextUnlockLamports > 0 ? clamp01(balanceLamports / nextUnlockLamports) : 1;
 
+    const milestoneTotalUnlockLamports = (updated.milestones ?? []).reduce((acc, m) => acc + Number(m.unlockLamports || 0), 0);
+    const compliance = milestoneTotalUnlockLamports > 0 ? clamp01(totalFundedLamports / milestoneTotalUnlockLamports) : 0;
+    const feeMode = (updated as any).creatorFeeMode === "managed" ? "managed" : "assisted";
+
     const explorerUrl = `https://explorer.solana.com/address/${updated.escrowPubkey}${clusterQuery()}`;
 
     const guidance = (() => {
@@ -162,13 +166,26 @@ export default async function CommitDashboardPage({ params }: { params: { id: st
                 <h1 className={`${styles.statement} ${statementText === "Reward Commitment" ? styles.statementFallback : ""}`}>{statementText}</h1>
 
                 <div className={styles.heroMetaRight}>
-                  <span className={styles.statusPill}>
-                    <span className={styles.statusDot} />
-                    <span>{statusLabel(updated.status)}</span>
-                  </span>
+                  <div className={styles.heroPills}>
+                    <span className={styles.statusPill}>
+                      <span className={styles.statusDot} />
+                      <span>{statusLabel(updated.status)}</span>
+                    </span>
+                    <span className={`${styles.statusPill} ${styles.modePill} ${feeMode === "managed" ? styles.modePillManaged : ""}`}>
+                      <span>{feeMode === "managed" ? "Auto-Escrow" : "Assisted"}</span>
+                    </span>
+                  </div>
                   <div className={styles.heroMetaLines}>
                     <div>Unlocked {fmtSol(unlockedLamports)} SOL</div>
                     {nextMilestone ? <div>Next unlock {fmtSol(nextUnlockLamports)} SOL</div> : <div>All milestones released</div>}
+                  </div>
+                  <div className={styles.complianceWrap}>
+                    <div className={styles.complianceTrack} aria-hidden="true">
+                      <div className={styles.complianceFill} style={{ width: `${Math.round(compliance * 100)}%` }} />
+                    </div>
+                    <div className={styles.complianceText}>
+                      Escrowed {fmtSol(totalFundedLamports)} / {fmtSol(milestoneTotalUnlockLamports)} SOL ({Math.round(compliance * 100)}%)
+                    </div>
                   </div>
                 </div>
               </div>
@@ -203,6 +220,7 @@ export default async function CommitDashboardPage({ params }: { params: { id: st
               canMarkFailure={updated.status !== "completed" && updated.status !== "failed"}
               explorerUrl={explorerUrl}
               creatorPubkey={updated.creatorPubkey ?? null}
+              creatorFeeMode={(updated as any).creatorFeeMode ?? null}
               tokenMint={updated.tokenMint ?? null}
               milestones={updated.milestones ?? []}
               approvalCounts={approvalCounts}
@@ -210,6 +228,7 @@ export default async function CommitDashboardPage({ params }: { params: { id: st
               totalFundedLamports={totalFundedLamports}
               unlockedLamports={unlockedLamports}
               balanceLamports={balanceLamports}
+              milestoneTotalUnlockLamports={milestoneTotalUnlockLamports}
               nowUnix={nowUnix}
             />
           </section>
