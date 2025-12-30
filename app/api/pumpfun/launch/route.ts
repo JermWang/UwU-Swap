@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { Keypair, PublicKey } from "@solana/web3.js";
 import { Buffer } from "buffer";
 
+import { isAdminRequestAsync } from "../../../lib/adminAuth";
+import { verifyAdminOrigin } from "../../../lib/adminSession";
 import { getConnection, getSolanaCaip2 } from "../../../lib/solana";
 import { buildUnsignedPumpfunCreateV2Tx } from "../../../lib/pumpfun";
 import { privySignAndSendSolanaTransaction } from "../../../lib/privy";
@@ -24,6 +26,11 @@ function parseBigIntLike(value: unknown): bigint | null {
 
 export async function POST(req: Request) {
   try {
+    verifyAdminOrigin(req);
+    if (!(await isAdminRequestAsync(req))) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const body = (await req.json().catch(() => null)) as any;
 
     const walletId = typeof body?.walletId === "string" ? body.walletId.trim() : "";
