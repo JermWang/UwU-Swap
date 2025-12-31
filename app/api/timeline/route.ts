@@ -44,6 +44,11 @@ export type TimelineEvent = {
   txSig?: string;
 };
 
+type TimelineCursor = {
+  beforeTs: number;
+  beforeId: string;
+};
+
 function maxOrNull(values: Array<number | undefined | null>): number | null {
   let best: number | null = null;
   for (const v of values) {
@@ -176,6 +181,12 @@ export async function GET(req: Request) {
 
     const url = new URL(req.url);
     const limit = Math.max(1, Math.min(200, Number(url.searchParams.get("limit") ?? "80") || 80));
+    const includeCommitmentsRaw = String(url.searchParams.get("includeCommitments") ?? "1").trim().toLowerCase();
+    const includeCommitments = includeCommitmentsRaw !== "0" && includeCommitmentsRaw !== "false";
+
+    const beforeTsRaw = url.searchParams.get("beforeTs");
+    const beforeId = String(url.searchParams.get("beforeId") ?? "").trim();
+    const beforeTs = beforeTsRaw != null && beforeTsRaw.trim().length ? Number(beforeTsRaw) : null;
 
     const rows = await listCommitments();
 
@@ -236,11 +247,28 @@ export async function GET(req: Request) {
       }
     }
 
-    events.sort((a, b) => b.timestampUnix - a.timestampUnix);
+    events.sort((a, b) => {
+      if (a.timestampUnix !== b.timestampUnix) return b.timestampUnix - a.timestampUnix;
+      return String(b.id).localeCompare(String(a.id));
+    });
+
+    let filtered = events;
+    if (beforeTs != null && Number.isFinite(beforeTs) && beforeId) {
+      const ts = Math.floor(beforeTs);
+      filtered = events.filter((e) => e.timestampUnix < ts || (e.timestampUnix === ts && String(e.id).localeCompare(beforeId) < 0));
+    } else if (beforeTs != null && Number.isFinite(beforeTs)) {
+      const ts = Math.floor(beforeTs);
+      filtered = events.filter((e) => e.timestampUnix < ts);
+    }
+
+    const page = filtered.slice(0, limit);
+    const last = page.length ? page[page.length - 1] : null;
+    const nextCursor: TimelineCursor | null = last ? { beforeTs: last.timestampUnix, beforeId: last.id } : null;
 
     return NextResponse.json({
-      events: events.slice(0, limit),
-      commitments: rows.map(publicView),
+      events: page,
+      commitments: includeCommitments ? rows.map(publicView) : undefined,
+      nextCursor,
     });
   } catch (e) {
     return NextResponse.json({ error: getSafeErrorMessage(e) }, { status: 500 });

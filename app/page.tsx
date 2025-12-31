@@ -65,6 +65,7 @@ type TimelineEvent = {
 type TimelineResponse = {
   events: TimelineEvent[];
   commitments?: CommitmentSummary[];
+  nextCursor?: { beforeTs: number; beforeId: string } | null;
 };
 
 type CommitmentSummary = {
@@ -125,6 +126,24 @@ function shortWallet(pk: string): string {
   return `${s.slice(0, 4)}…${s.slice(-4)}`;
 }
 
+function fmtCompact(n: number): string {
+  const v = Number(n);
+  if (!Number.isFinite(v)) return "0";
+  const abs = Math.abs(v);
+  if (abs >= 1_000_000_000) return `${(v / 1_000_000_000).toFixed(2)}B`;
+  if (abs >= 1_000_000) return `${(v / 1_000_000).toFixed(2)}M`;
+  if (abs >= 1_000) return `${(v / 1_000).toFixed(1)}K`;
+  return String(Math.round(v));
+}
+
+function unixAgoShort(tsUnix: number, nowUnix: number): string {
+  const d = Math.max(0, nowUnix - tsUnix);
+  if (d < 60) return `${d}s`;
+  if (d < 3600) return `${Math.floor(d / 60)}m`;
+  if (d < 86400) return `${Math.floor(d / 3600)}h`;
+  return `${Math.floor(d / 86400)}d`;
+}
+
 function SocialIcon({ type }: { type: "x" | "telegram" | "discord" | "website" | "globe" }) {
   const paths: Record<string, string> = {
     x: "M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z",
@@ -143,6 +162,8 @@ function SocialIcon({ type }: { type: "x" | "telegram" | "discord" | "website" |
 export default function Home() {
   const commitmentRef = useRef<HTMLDivElement | null>(null);
   const timelineRef = useRef<HTMLDivElement | null>(null);
+  const timelineHydratedRef = useRef(false);
+  const timelineUrlRef = useRef<string>("");
 
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -192,10 +213,14 @@ export default function Home() {
   const [expanded, setExpanded] = useState<Record<string, CommitmentStatusResponse | null>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [commitmentsLoading, setCommitmentsLoading] = useState(false);
 
   const [timelineEvents, setTimelineEvents] = useState<TimelineEvent[]>([]);
   const [timelineCommitments, setTimelineCommitments] = useState<CommitmentSummary[]>([]);
   const [timelineExpanded, setTimelineExpanded] = useState<Record<string, boolean>>({});
+  const [timelineLoading, setTimelineLoading] = useState(false);
+  const [timelineLoadingMore, setTimelineLoadingMore] = useState(false);
+  const [timelineNextCursor, setTimelineNextCursor] = useState<null | { beforeTs: number; beforeId: string }>(null);
   const [timelineFilter, setTimelineFilter] = useState<"curated" | "all" | "reward" | "milestones" | "completed">("curated");
   const [timelineQuery, setTimelineQuery] = useState("");
   const [timelineKindFilter, setTimelineKindFilter] = useState<"all" | "personal" | "reward">("all");
@@ -548,9 +573,47 @@ export default function Home() {
   }
 
   async function loadTimeline() {
-    const data = await apiGet<TimelineResponse>(`/api/timeline?limit=120`);
-    setTimelineEvents(Array.isArray(data.events) ? data.events : []);
-    setTimelineCommitments(Array.isArray(data.commitments) ? data.commitments : []);
+    setTimelineLoading(true);
+    try {
+      const data = await apiGet<TimelineResponse>(`/api/timeline?limit=120`);
+      setTimelineEvents(Array.isArray(data.events) ? data.events : []);
+      setTimelineCommitments(Array.isArray(data.commitments) ? data.commitments : []);
+      setTimelineNextCursor(data?.nextCursor && typeof data.nextCursor === "object" ? (data.nextCursor as any) : null);
+      setTimelineExpanded({});
+    } finally {
+      setTimelineLoading(false);
+    }
+  }
+
+  async function loadMoreTimeline() {
+    if (!timelineNextCursor) return;
+    if (timelineLoading || timelineLoadingMore) return;
+
+    setTimelineLoadingMore(true);
+    try {
+      const c = timelineNextCursor;
+      const qs = new URLSearchParams();
+      qs.set("limit", "120");
+      qs.set("beforeTs", String(c.beforeTs));
+      qs.set("beforeId", String(c.beforeId));
+      qs.set("includeCommitments", "0");
+
+      const data = await apiGet<TimelineResponse>(`/api/timeline?${qs.toString()}`);
+      const more: TimelineEvent[] = Array.isArray(data.events) ? data.events : [];
+
+      setTimelineEvents((prev) => {
+        const seen = new Set(prev.map((e) => e.id));
+        const merged = prev.slice();
+        for (const e of more) {
+          if (!seen.has(e.id)) merged.push(e);
+        }
+        return merged;
+      });
+
+      setTimelineNextCursor(data?.nextCursor && typeof data.nextCursor === "object" ? (data.nextCursor as any) : null);
+    } finally {
+      setTimelineLoadingMore(false);
+    }
   }
 
   async function loadProfilesForWallets(walletPubkeys: string[]) {
@@ -632,6 +695,293 @@ export default function Home() {
     }
     return m;
   }, [timelineCommitments]);
+
+  const timelineEventsByCommitmentId = useMemo(() => {
+    const m: Record<string, TimelineEvent[]> = {};
+    for (const e of timelineEvents) {
+      const id = String((e as any)?.commitmentId ?? "").trim();
+      if (!id) continue;
+      if (!m[id]) m[id] = [];
+      m[id].push(e);
+    }
+    for (const k of Object.keys(m)) {
+      m[k].sort((a, b) => Number(b.timestampUnix ?? 0) - Number(a.timestampUnix ?? 0) || String(b.id).localeCompare(String(a.id)));
+    }
+    return m;
+  }, [timelineEvents]);
+
+  type DiscoverCard = {
+    key: string;
+    isMock: boolean;
+    commitmentId: string;
+    tokenMint: string;
+    projectName: string;
+    projectSymbol: string;
+    projectImageUrl: string;
+    projectDesc: string;
+    websiteUrl: string;
+    xUrl: string;
+    telegramUrl: string;
+    discordUrl: string;
+    statement: string;
+    status: string;
+    creatorFeeMode: string;
+    escrowedLamports: number;
+    targetLamports: number;
+    milestonesTotal: number;
+    milestonesDone: number;
+    milestonesReleased: number;
+    lastActivityUnix: number;
+    events24h: number;
+    events7d: number;
+  };
+
+  const discoverCards: DiscoverCard[] = useMemo(() => {
+    const nowUnix = Math.floor(Date.now() / 1000);
+
+    const cards: DiscoverCard[] = [];
+
+    for (const c of timelineCommitments) {
+      const id = String(c?.id ?? "").trim();
+      if (!id) continue;
+
+      const kind = String(c?.kind ?? "").trim();
+      if (timelineKindFilter === "reward" && kind !== "creator_reward") continue;
+      if (timelineKindFilter === "personal" && kind !== "personal") continue;
+
+      const tokenMint = String(c?.tokenMint ?? "").trim();
+      if (kind === "creator_reward" && !tokenMint) continue;
+
+      const status = String(c?.status ?? "").trim();
+      if (timelineStatusFilter !== "all") {
+        const s = status.toLowerCase();
+        if (timelineStatusFilter === "active" && s !== "active") continue;
+        if (timelineStatusFilter === "funded" && s !== "funded") continue;
+        if (timelineStatusFilter === "expired" && s !== "expired") continue;
+        if (timelineStatusFilter === "success" && s !== "resolved_success") continue;
+        if (timelineStatusFilter === "failure" && s !== "resolved_failure" && s !== "failed") continue;
+      }
+
+      const events = timelineEventsByCommitmentId[id] ?? [];
+      const lastActivityUnix = events.length ? Number(events[0]?.timestampUnix ?? 0) : Number(c?.createdAtUnix ?? 0);
+
+      const events24h = events.filter((e) => nowUnix - Number(e.timestampUnix ?? 0) <= 86400).length;
+      const events7d = events.filter((e) => nowUnix - Number(e.timestampUnix ?? 0) <= 86400 * 7).length;
+
+      const milestones = Array.isArray(c?.milestones) ? c.milestones : [];
+      const milestonesTotal = milestones.length;
+      const milestonesDone = milestones.filter((m) => {
+        const s = String((m as any)?.status ?? "").toLowerCase();
+        return s === "completed" || s === "claimable" || s === "released";
+      }).length;
+      const milestonesReleased = milestones.filter((m) => String((m as any)?.status ?? "").toLowerCase() === "released").length;
+
+      const targetLamports = milestones.reduce((acc, m) => acc + Number((m as any)?.unlockLamports ?? 0), 0);
+      const escrowedLamports = Number(c?.totalFundedLamports ?? 0);
+
+      const project = tokenMint ? projectsByMint[tokenMint] : undefined;
+      const projectName = project?.name != null ? String(project.name) : "";
+      const projectSymbol = project?.symbol != null ? String(project.symbol) : "";
+      const projectImageUrl = project?.imageUrl != null ? String(project.imageUrl) : "";
+      const projectDesc = project?.description != null ? String(project.description) : "";
+      const websiteUrl = project?.websiteUrl != null ? String(project.websiteUrl) : "";
+      const xUrl = project?.xUrl != null ? String(project.xUrl) : "";
+      const telegramUrl = project?.telegramUrl != null ? String(project.telegramUrl) : "";
+      const discordUrl = project?.discordUrl != null ? String(project.discordUrl) : "";
+
+      const statement = String(c?.statement ?? "").trim();
+      const creatorFeeMode = String(c?.creatorFeeMode ?? "assisted");
+
+      const q = timelineQuery.trim().toLowerCase();
+      if (q.length) {
+        const hay = `${id} ${tokenMint} ${statement} ${projectName} ${projectSymbol}`.toLowerCase();
+        if (!hay.includes(q)) continue;
+      }
+
+      if (timelineFilter === "reward" && kind !== "creator_reward") continue;
+      if (timelineFilter === "completed") {
+        const s = status.toLowerCase();
+        if (!(s.includes("resolved_success") || s.includes("completed"))) continue;
+      }
+      if (timelineFilter === "milestones") {
+        if (milestonesTotal <= 0) continue;
+      }
+
+      cards.push({
+        key: `real:${id}`,
+        isMock: false,
+        commitmentId: id,
+        tokenMint,
+        projectName,
+        projectSymbol,
+        projectImageUrl,
+        projectDesc,
+        websiteUrl,
+        xUrl,
+        telegramUrl,
+        discordUrl,
+        statement,
+        status,
+        creatorFeeMode,
+        escrowedLamports,
+        targetLamports,
+        milestonesTotal,
+        milestonesDone,
+        milestonesReleased,
+        lastActivityUnix,
+        events24h,
+        events7d,
+      });
+    }
+
+    const sorted = cards.slice();
+    if (timelineSort === "amount_desc") {
+      sorted.sort((a, b) => b.escrowedLamports - a.escrowedLamports || b.lastActivityUnix - a.lastActivityUnix);
+    } else if (timelineSort === "oldest") {
+      sorted.sort((a, b) => a.lastActivityUnix - b.lastActivityUnix || a.key.localeCompare(b.key));
+    } else {
+      sorted.sort((a, b) => b.lastActivityUnix - a.lastActivityUnix || b.key.localeCompare(a.key));
+    }
+
+    const need = Math.max(0, 24 - sorted.length);
+    if (need === 0) return sorted;
+
+    const mock: DiscoverCard[] = [
+      {
+        key: "mock:atlas-bridge",
+        isMock: true,
+        commitmentId: "",
+        tokenMint: "ATLAS9o9w4xD4mQdK9mZ2bYJrQyR2YVx7QxF1X9mZp1",
+        projectName: "Atlas Bridge",
+        projectSymbol: "ATLAS",
+        projectImageUrl: "",
+        projectDesc: "A production-grade bridge monitor + proof relay for Solana-native rollups. Audited, milestone-based escrow.",
+        websiteUrl: "https://atlasbridge.io",
+        xUrl: "https://x.com/atlasbridge",
+        telegramUrl: "",
+        discordUrl: "https://discord.gg/atlasbridge",
+        statement: "Ship proof relay v1 + public uptime dashboard",
+        status: "active",
+        creatorFeeMode: "managed",
+        escrowedLamports: 28_500_000_000,
+        targetLamports: 40_000_000_000,
+        milestonesTotal: 4,
+        milestonesDone: 2,
+        milestonesReleased: 1,
+        lastActivityUnix: nowUnix - 60 * 22,
+        events24h: 7,
+        events7d: 18,
+      },
+      {
+        key: "mock:clearclip",
+        isMock: true,
+        commitmentId: "",
+        tokenMint: "CLIP9o9w4xD4mQdK9mZ2bYJrQyR2YVx7QxF1X9mZp2",
+        projectName: "ClearClip",
+        projectSymbol: "CLIP",
+        projectImageUrl: "",
+        projectDesc: "On-chain clip licensing for creators: escrowed payouts, milestone verification, and transparent revshare.",
+        websiteUrl: "https://clearclip.app",
+        xUrl: "https://x.com/clearclip",
+        telegramUrl: "https://t.me/clearclip",
+        discordUrl: "",
+        statement: "Integrate payout escrow + publish licensing registry",
+        status: "funded",
+        creatorFeeMode: "assisted",
+        escrowedLamports: 12_200_000_000,
+        targetLamports: 12_200_000_000,
+        milestonesTotal: 3,
+        milestonesDone: 1,
+        milestonesReleased: 0,
+        lastActivityUnix: nowUnix - 3600 * 3,
+        events24h: 4,
+        events7d: 11,
+      },
+      {
+        key: "mock:signalforge",
+        isMock: true,
+        commitmentId: "",
+        tokenMint: "SIG9o9w4xD4mQdK9mZ2bYJrQyR2YVx7QxF1X9mZp3",
+        projectName: "SignalForge",
+        projectSymbol: "SGF",
+        projectImageUrl: "",
+        projectDesc: "A high-throughput alerts engine for on-chain events. Focus: latency, reliability, and transparent service SLAs.",
+        websiteUrl: "https://signalforge.dev",
+        xUrl: "https://x.com/signalforge",
+        telegramUrl: "",
+        discordUrl: "https://discord.gg/signalforge",
+        statement: "Ship 50ms pipeline + public incident log",
+        status: "active",
+        creatorFeeMode: "managed",
+        escrowedLamports: 6_300_000_000,
+        targetLamports: 25_000_000_000,
+        milestonesTotal: 5,
+        milestonesDone: 1,
+        milestonesReleased: 0,
+        lastActivityUnix: nowUnix - 3600 * 9,
+        events24h: 2,
+        events7d: 8,
+      },
+      {
+        key: "mock:shipyard-os",
+        isMock: true,
+        commitmentId: "",
+        tokenMint: "SHIP9o9w4xD4mQdK9mZ2bYJrQyR2YVx7QxF1X9mZp4",
+        projectName: "Shipyard OS",
+        projectSymbol: "YARD",
+        projectImageUrl: "",
+        projectDesc: "A lightweight, opinionated release system for crypto teams: escrowed milestones + deterministic deployment receipts.",
+        websiteUrl: "https://shipyardos.com",
+        xUrl: "https://x.com/shipyardos",
+        telegramUrl: "",
+        discordUrl: "",
+        statement: "Deliver staged release receipts + admin audit trail",
+        status: "completed",
+        creatorFeeMode: "managed",
+        escrowedLamports: 55_000_000_000,
+        targetLamports: 55_000_000_000,
+        milestonesTotal: 4,
+        milestonesDone: 4,
+        milestonesReleased: 4,
+        lastActivityUnix: nowUnix - 86400 * 2,
+        events24h: 0,
+        events7d: 6,
+      },
+    ];
+
+    const fill: DiscoverCard[] = [];
+    for (let i = 0; i < need; i++) {
+      const base = mock[i % mock.length];
+      fill.push({
+        ...base,
+        key: `${base.key}:${i}`,
+        lastActivityUnix: base.lastActivityUnix - i * 2700,
+        escrowedLamports: Math.max(0, base.escrowedLamports - i * 250_000_000),
+        events24h: Math.max(0, base.events24h - (i % 3)),
+        events7d: Math.max(0, base.events7d - (i % 5)),
+      });
+    }
+
+    return sorted.concat(fill);
+  }, [projectsByMint, timelineCommitments, timelineEventsByCommitmentId, timelineFilter, timelineKindFilter, timelineQuery, timelineSort, timelineStatusFilter]);
+
+  const discoverStats = useMemo(() => {
+    const real = discoverCards.filter((c) => !c.isMock);
+    const totalEscrowedLamports = real.reduce((acc, c) => acc + Number(c.escrowedLamports || 0), 0);
+    const active = real.filter((c) => String(c.status).toLowerCase() === "active").length;
+    const funded = real.filter((c) => String(c.status).toLowerCase() === "funded").length;
+    const shipped = real.filter((c) => {
+      const s = String(c.status).toLowerCase();
+      return s.includes("resolved_success") || s.includes("completed");
+    }).length;
+    return {
+      realCount: real.length,
+      active,
+      funded,
+      shipped,
+      escrowedSol: totalEscrowedLamports / 1_000_000_000,
+    };
+  }, [discoverCards]);
 
   function humanTime(tsUnix: number): string {
     try {
@@ -747,8 +1097,13 @@ export default function Home() {
   }, [timelineEvents, timelineFilter, timelineKindFilter, timelineQuery, timelineSort, timelineStatusFilter]);
 
   async function loadCommitments() {
-    const { commitments } = await apiGet<{ commitments: CommitmentSummary[] }>("/api/commitments");
-    setCommitments(commitments);
+    setCommitmentsLoading(true);
+    try {
+      const { commitments } = await apiGet<{ commitments: CommitmentSummary[] }>("/api/commitments");
+      setCommitments(commitments);
+    } finally {
+      setCommitmentsLoading(false);
+    }
   }
 
   async function createCommitment() {
@@ -845,6 +1200,45 @@ export default function Home() {
     if (tab !== "discover") return;
     loadTimeline().catch((e) => setError((e as Error).message));
   }, [tab]);
+
+  useEffect(() => {
+    if (tab !== "discover") return;
+    if (!searchParams) return;
+    if (timelineHydratedRef.current) return;
+
+    const tf = String(searchParams.get("tf") ?? "").trim();
+    const tq = String(searchParams.get("tq") ?? "").trim();
+    const tk = String(searchParams.get("tk") ?? "").trim();
+    const ts = String(searchParams.get("ts") ?? "").trim();
+    const tso = String(searchParams.get("tso") ?? "").trim();
+
+    if (tf === "curated" || tf === "all" || tf === "reward" || tf === "milestones" || tf === "completed") setTimelineFilter(tf);
+    if (tk === "all" || tk === "personal" || tk === "reward") setTimelineKindFilter(tk);
+    if (ts === "all" || ts === "active" || ts === "funded" || ts === "expired" || ts === "success" || ts === "failure") setTimelineStatusFilter(ts);
+    if (tso === "newest" || tso === "oldest" || tso === "amount_desc") setTimelineSort(tso);
+    if (tq) setTimelineQuery(tq);
+
+    timelineHydratedRef.current = true;
+  }, [tab, searchParams]);
+
+  useEffect(() => {
+    if (tab !== "discover") return;
+    if (!timelineHydratedRef.current) return;
+    if (!searchParams) return;
+
+    const next = new URLSearchParams(searchParams.toString());
+    next.set("tab", "discover");
+    next.set("tf", timelineFilter);
+    next.set("tq", timelineQuery);
+    next.set("tk", timelineKindFilter);
+    next.set("ts", timelineStatusFilter);
+    next.set("tso", timelineSort);
+
+    const nextUrl = `/?${next.toString()}`;
+    if (timelineUrlRef.current === nextUrl) return;
+    timelineUrlRef.current = nextUrl;
+    router.replace(nextUrl);
+  }, [router, searchParams, tab, timelineFilter, timelineQuery, timelineKindFilter, timelineStatusFilter, timelineSort]);
 
   useEffect(() => {
     if (tab !== "discover") return;
@@ -1568,7 +1962,28 @@ export default function Home() {
                           </button>
                         </div>
 
-                        {commitments.length === 0 ? (
+                        {commitmentsLoading ? (
+                          <div className="commitList" aria-hidden="true">
+                            {Array.from({ length: 3 }).map((_, i) => (
+                              <div key={i} className="commitListItem">
+                                <div className="commitListItemMain">
+                                  <div className="commitListItemInfo">
+                                    <div className="skeleton skeletonLine" style={{ width: "180px" }} />
+                                    <div className="commitListItemMeta" style={{ marginTop: 10 }}>
+                                      <div className="skeleton skeletonLineSm" style={{ width: "120px" }} />
+                                    </div>
+                                    <div style={{ marginTop: 10 }}>
+                                      <div className="skeleton skeletonLineSm" style={{ width: "220px" }} />
+                                    </div>
+                                  </div>
+                                  <div className="commitListItemActions">
+                                    <div className="skeleton" style={{ width: 120, height: 34, borderRadius: 999 }} />
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : commitments.length === 0 ? (
                           <div className="commitListEmpty">No commitments yet. Create one above to get started.</div>
                         ) : (
                           <div className="commitList">
@@ -1672,422 +2087,324 @@ export default function Home() {
                 </div>
               </div>
             ) : tab === "discover" ? (
-              <div className="timelineStage" ref={timelineRef}>
-                <div className="timelineWrap">
+              <div className="discoverStage" ref={timelineRef}>
+                <div className="discoverWrap">
                   {error ? <div className="timelineError">{error}</div> : null}
 
-                  <section className="unifiedPanel">
-                    <div className="timelineHero">
-                      <h1 className="timelineHeroTitle">Discovery Timeline</h1>
-                      <p className="timelineHeroLead">A living record of execution. No posts. Only verifiable commitment events.</p>
+                  <section className="discoverPanel">
+                    <div className="discoverHeader">
+                      <div className="discoverHeaderTop">
+                        <h1 className="discoverTitle">Discover</h1>
+                        <div className="timelineFilterRow">
+                          <button className={`timelineFilter ${timelineFilter === "curated" ? "timelineFilterActive" : ""}`} onClick={() => setTimelineFilter("curated")}>
+                            Hot
+                          </button>
+                          <button className={`timelineFilter ${timelineFilter === "completed" ? "timelineFilterActive" : ""}`} onClick={() => setTimelineFilter("completed")}>
+                            Shipped
+                          </button>
+                          <button className={`timelineFilter ${timelineFilter === "reward" ? "timelineFilterActive" : ""}`} onClick={() => setTimelineFilter("reward")}>
+                            Rewards
+                          </button>
+                          <button className={`timelineFilter ${timelineFilter === "milestones" ? "timelineFilterActive" : ""}`} onClick={() => setTimelineFilter("milestones")}>
+                            Milestones
+                          </button>
+                          <button className={`timelineFilter ${timelineFilter === "all" ? "timelineFilterActive" : ""}`} onClick={() => setTimelineFilter("all")}>
+                            All
+                          </button>
+                        </div>
+                      </div>
+                      <p className="discoverLead">
+                        A high-signal discovery surface for verifiable execution: escrowed milestones, on-chain receipts, and momentum you can audit.
+                      </p>
+
+                      <div className="discoverStats">
+                        <div className="discoverStat">
+                          <div className="discoverStatLabel">Listed</div>
+                          <div className="discoverStatValue">{fmtCompact(discoverStats.realCount)}</div>
+                        </div>
+                        <div className="discoverStat">
+                          <div className="discoverStatLabel">Active</div>
+                          <div className="discoverStatValue">{fmtCompact(discoverStats.active)}</div>
+                        </div>
+                        <div className="discoverStat">
+                          <div className="discoverStatLabel">Funded</div>
+                          <div className="discoverStatValue">{fmtCompact(discoverStats.funded)}</div>
+                        </div>
+                        <div className="discoverStat">
+                          <div className="discoverStatLabel">Escrowed</div>
+                          <div className="discoverStatValue">{fmtCompact(discoverStats.escrowedSol)} SOL</div>
+                        </div>
+                      </div>
                     </div>
 
-                    <div className="timelineControls">
-                    <div className="timelineFilterRow">
-                      <button className={`timelineFilter ${timelineFilter === "curated" ? "timelineFilterActive" : ""}`} onClick={() => setTimelineFilter("curated")}>
-                        Curated
-                      </button>
-                      <button className={`timelineFilter ${timelineFilter === "completed" ? "timelineFilterActive" : ""}`} onClick={() => setTimelineFilter("completed")}>
-                        Shipped
-                      </button>
-                      <button className={`timelineFilter ${timelineFilter === "reward" ? "timelineFilterActive" : ""}`} onClick={() => setTimelineFilter("reward")}>
-                        Rewards
-                      </button>
-                      <button className={`timelineFilter ${timelineFilter === "milestones" ? "timelineFilterActive" : ""}`} onClick={() => setTimelineFilter("milestones")}>
-                        Milestones
-                      </button>
-                      <button className={`timelineFilter ${timelineFilter === "all" ? "timelineFilterActive" : ""}`} onClick={() => setTimelineFilter("all")}>
-                        All
-                      </button>
+                    <div className="discoverControls">
+                      <div className="discoverControlsTop">
+                        <input
+                          className="timelineSearch"
+                          value={timelineQuery}
+                          onChange={(e) => setTimelineQuery(e.target.value)}
+                          placeholder="Search project, symbol, commitment id, mint…"
+                        />
+                        <select className="timelineSelect" value={timelineKindFilter} onChange={(e) => setTimelineKindFilter(e.target.value as any)}>
+                          <option value="all">All types</option>
+                          <option value="reward">Rewards</option>
+                          <option value="personal">Personal</option>
+                        </select>
+                        <select className="timelineSelect" value={timelineStatusFilter} onChange={(e) => setTimelineStatusFilter(e.target.value as any)}>
+                          <option value="all">All status</option>
+                          <option value="active">Active</option>
+                          <option value="funded">Funded</option>
+                          <option value="expired">Expired</option>
+                          <option value="success">Success</option>
+                          <option value="failure">Failure</option>
+                        </select>
+                        <select className="timelineSelect" value={timelineSort} onChange={(e) => setTimelineSort(e.target.value as any)}>
+                          <option value="newest">New</option>
+                          <option value="amount_desc">Escrowed</option>
+                          <option value="oldest">Old</option>
+                        </select>
+                      </div>
+
+                      <div className="discoverControlsBottom">
+                        <button className="timelineRefresh" onClick={() => loadTimeline().catch((e) => setError((e as Error).message))} disabled={busy != null}>
+                          Refresh
+                        </button>
+                        <button
+                          className="timelineRefresh"
+                          onClick={() => loadMoreTimeline().catch((e) => setError((e as Error).message))}
+                          disabled={busy != null || timelineLoading || timelineLoadingMore || !timelineNextCursor}
+                          title="Load older"
+                        >
+                          {timelineLoadingMore ? "Loading..." : "Load older"}
+                        </button>
+                      </div>
                     </div>
 
-                    <div className="timelineToolRow">
-                      <input
-                        className="timelineSearch"
-                        value={timelineQuery}
-                        onChange={(e) => setTimelineQuery(e.target.value)}
-                        placeholder="Search commitment id, escrow, tx, statement…"
-                      />
-
-                      <select className="timelineSelect" value={timelineKindFilter} onChange={(e) => setTimelineKindFilter(e.target.value as any)}>
-                        <option value="all">All kinds</option>
-                        <option value="personal">Personal</option>
-                        <option value="reward">Reward</option>
-                      </select>
-
-                      <select className="timelineSelect" value={timelineStatusFilter} onChange={(e) => setTimelineStatusFilter(e.target.value as any)}>
-                        <option value="all">All status</option>
-                        <option value="active">Active</option>
-                        <option value="funded">Funded</option>
-                        <option value="expired">Expired</option>
-                        <option value="success">Success</option>
-                        <option value="failure">Failure</option>
-                      </select>
-
-                      <select className="timelineSelect" value={timelineSort} onChange={(e) => setTimelineSort(e.target.value as any)}>
-                        <option value="newest">Newest</option>
-                        <option value="oldest">Oldest</option>
-                        <option value="amount_desc">Largest amount</option>
-                      </select>
-
-                      <button className="timelineRefresh" onClick={() => loadTimeline().catch((e) => setError((e as Error).message))} disabled={busy != null}>
-                        Refresh
-                      </button>
-                    </div>
-
-                    </div>
-
-                    {filteredTimeline.length === 0 ? (
-                      <div className="timelineEmpty">No events yet. Create a commitment to start generating verifiable activity.</div>
+                    {timelineLoading ? (
+                      <div className="discoverGrid" aria-hidden="true">
+                        {Array.from({ length: 12 }).map((_, i) => (
+                          <div key={i} className="discoverCard discoverCardDisabled">
+                            <div className="discoverCardTop">
+                              <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 0, flex: 1 }}>
+                                <div className="skeleton skeletonLineSm" style={{ width: 160 }} />
+                                <div className="skeleton skeletonLineSm" style={{ width: 210 }} />
+                              </div>
+                              <div className="skeleton skeletonLineSm" style={{ width: 70, height: 18, borderRadius: 999 }} />
+                            </div>
+                            <div style={{ marginTop: 10 }}>
+                              <div className="skeleton skeletonLineSm" style={{ width: 220 }} />
+                              <div className="skeleton skeletonLineSm" style={{ width: 190, marginTop: 8 }} />
+                            </div>
+                            <div style={{ marginTop: 14 }}>
+                              <div className="skeleton skeletonLineSm" style={{ width: "100%", height: 8, borderRadius: 999 }} />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : discoverCards.length === 0 ? (
+                      <div className="timelineEmpty">No results. Try clearing filters.</div>
                     ) : (
-                      <div className="timelineRail">
-                        {filteredTimeline.map((e) => {
-                        const open = Boolean(timelineExpanded[e.id]);
-                        const commit = timelineCommitmentsById[String(e.commitmentId)];
-                        const tokenMint = typeof commit?.tokenMint === "string" ? commit.tokenMint.trim() : "";
+                      <div className="discoverGrid">
+                        {discoverCards.map((c) => {
+                          const nowUnix = Math.floor(Date.now() / 1000);
+                          const target = Math.max(0, Number(c.targetLamports || 0));
+                          const escrowed = Math.max(0, Number(c.escrowedLamports || 0));
+                          const pct = target > 0 ? clamp01(escrowed / target) : 0;
 
-                        const project = tokenMint ? projectsByMint[tokenMint] : undefined;
-                        const projectName = project?.name != null ? String(project.name) : "";
-                        const projectSymbol = project?.symbol != null ? String(project.symbol) : "";
-                        const projectWebsite = project?.websiteUrl != null ? String(project.websiteUrl) : "";
-                        const projectDesc = project?.description != null ? String(project.description) : "";
+                          const title = c.projectName || (c.projectSymbol ? `$${c.projectSymbol}` : c.tokenMint ? shortWallet(c.tokenMint) : "Project");
+                          const subtitle = c.projectName && c.projectSymbol ? `$${c.projectSymbol}` : c.projectSymbol ? `$${c.projectSymbol}` : "";
 
-                        const actorPk = String(e.creatorPubkey ?? e.authority ?? "").trim();
-                        const actorProfile = actorPk.length ? profilesByWallet[actorPk] : undefined;
-                        const actorLabel = actorProfile?.displayName?.trim() ? String(actorProfile.displayName) : actorPk ? shortWallet(actorPk) : "Unknown";
-                        const actorBio = actorProfile?.bio != null ? String(actorProfile.bio) : "";
+                          const statusLower = String(c.status ?? "").toLowerCase();
+                          const statusLabel =
+                            statusLower.includes("resolved_success") || statusLower.includes("completed")
+                              ? "shipped"
+                              : statusLower.includes("failed") || statusLower.includes("resolved_failure")
+                                ? "failed"
+                                : statusLower || "active";
 
-                        const primaryTitle =
-                          e.statement && e.statement.trim().length ? e.statement.trim() : e.kind === "creator_reward" ? "Reward commitment" : "Commitment";
-                        const rightAmount =
-                          e.unlockLamports != null
-                            ? `${fmtSol(e.unlockLamports)} SOL`
-                            : e.amountLamports != null
-                              ? `${fmtSol(e.amountLamports)} SOL`
-                              : "";
+                          const credibilitySignals: string[] = [];
+                          if (String(c.creatorFeeMode) === "managed") credibilitySignals.push("auto-escrow");
+                          if (escrowed > 0) credibilitySignals.push("funds locked");
+                          if (c.milestonesReleased > 0) credibilitySignals.push(`${c.milestonesReleased} released`);
+                          if (c.events24h >= 5) credibilitySignals.push("high momentum");
 
-                        const escrowCopyKey = `${e.id}:escrow`;
-                        const txCopyKey = `${e.id}:tx`;
-                        const caCopyKey = `${e.id}:ca`;
+                          const canNavigate = !c.isMock && c.commitmentId;
 
-                        return (
-                          <div key={e.id} className={`timelineReceipt ${open ? "timelineReceiptOpen" : ""}`}>
+                          return (
                             <div
-                              className="timelineReceiptTop"
-                              role="button"
-                              tabIndex={0}
-                              onClick={() => setTimelineExpanded((prev) => ({ ...prev, [e.id]: !open }))}
-                              onKeyDown={(ev) => {
-                                if (ev.key === "Enter" || ev.key === " ") {
-                                  ev.preventDefault();
-                                  setTimelineExpanded((prev) => ({ ...prev, [e.id]: !open }));
-                                }
+                              key={c.key}
+                              className={`discoverCard ${!canNavigate ? "discoverCardDisabled" : ""}`}
+                              onClick={() => {
+                                if (!canNavigate) return;
+                                router.push(`/commit/${encodeURIComponent(c.commitmentId)}`);
                               }}
-                              aria-expanded={open}
                             >
-                              <div className="timelineReceiptLeft">
-                                {actorPk ? (
-                                  <div
-                                    className="timelineActor"
-                                    onClick={(ev) => ev.stopPropagation()}
-                                    onKeyDown={(ev) => ev.stopPropagation()}
-                                  >
-                                    <a
-                                      className="timelineActorLink"
-                                      href={`/u/${encodeURIComponent(actorPk)}`}
-                                      onClick={(ev) => ev.stopPropagation()}
-                                      onKeyDown={(ev) => ev.stopPropagation()}
-                                    >
-                                      {actorProfile?.avatarUrl ? (
-                                        <img className="timelineActorAvatar" src={String(actorProfile.avatarUrl)} alt="" />
-                                      ) : (
-                                        <span className="timelineActorAvatarFallback" />
-                                      )}
-                                      <span className="timelineActorName">{actorLabel}</span>
-                                    </a>
-                                    {actorBio && actorBio.trim().length ? <div className="timelineActorBio">{actorBio}</div> : null}
-                                  </div>
-                                ) : null}
-
-                                <div className="timelineReceiptKicker">
-                                  <span className={`timelineChip ${e.kind === "creator_reward" ? "timelineChipReward" : ""}`}>
-                                    {e.kind === "creator_reward" ? "reward" : "personal"}
-                                  </span>
-                                  {e.kind === "creator_reward" ? (
-                                    <span
-                                      className={`timelineChip ${String(e.creatorFeeMode ?? "assisted") === "managed" ? "timelineChipModeManaged" : "timelineChipModeAssisted"}`}
-                                    >
-                                      {String(e.creatorFeeMode ?? "assisted") === "managed" ? "auto-escrow" : "assisted"}
-                                    </span>
-                                  ) : null}
-                                  <span className="timelineChip timelineChipType">{typeLabel(e.type)}</span>
-                                  <span className="timelineChip timelineChipStatus">{e.status}</span>
-                                </div>
-                                <div className="timelineReceiptTitle">{primaryTitle}</div>
-                                {e.milestoneTitle ? <div className="timelineReceiptSub">{e.milestoneTitle}</div> : null}
-
-                                {projectName || projectSymbol || projectWebsite || projectDesc || project?.xUrl || project?.telegramUrl || project?.discordUrl ? (
-                                  <div className="timelineProjectMeta">
-                                    {projectName || projectSymbol ? (
-                                      <div className="timelineProjectName">
-                                        {projectName ? projectName : null}
-                                        {projectName && projectSymbol ? " · " : null}
-                                        {projectSymbol ? `$${projectSymbol}` : null}
-                                      </div>
-                                    ) : null}
-                                    {projectDesc && projectDesc.trim().length ? <div className="timelineProjectDesc">{projectDesc}</div> : null}
-                                    <div className="timelineSocialRow" onClick={(ev) => ev.stopPropagation()} onKeyDown={(ev) => ev.stopPropagation()}>
-                                      {projectWebsite ? (
-                                        <a
-                                          className="timelineSocialLink"
-                                          href={projectWebsite}
-                                          target="_blank"
-                                          rel="noreferrer noopener"
-                                          title="Website"
-                                        >
-                                          <SocialIcon type="website" />
-                                        </a>
-                                      ) : null}
-                                      {project?.xUrl ? (
-                                        <a
-                                          className="timelineSocialLink"
-                                          href={String(project.xUrl)}
-                                          target="_blank"
-                                          rel="noreferrer noopener"
-                                          title="X / Twitter"
-                                        >
-                                          <SocialIcon type="x" />
-                                        </a>
-                                      ) : null}
-                                      {project?.telegramUrl ? (
-                                        <a
-                                          className="timelineSocialLink"
-                                          href={String(project.telegramUrl)}
-                                          target="_blank"
-                                          rel="noreferrer noopener"
-                                          title="Telegram"
-                                        >
-                                          <SocialIcon type="telegram" />
-                                        </a>
-                                      ) : null}
-                                      {project?.discordUrl ? (
-                                        <a
-                                          className="timelineSocialLink"
-                                          href={String(project.discordUrl)}
-                                          target="_blank"
-                                          rel="noreferrer noopener"
-                                          title="Discord"
-                                        >
-                                          <SocialIcon type="discord" />
-                                        </a>
+                              <div className="discoverCardTop">
+                                <div style={{ minWidth: 0, flex: 1 }}>
+                                  <div className="tokenBadge">
+                                    <div className="tokenBadgeIcon" aria-hidden="true">
+                                      <span className="tokenBadgeFallback" />
+                                      {c.projectImageUrl ? (
+                                        <img
+                                          className="tokenBadgeImg"
+                                          src={c.projectImageUrl}
+                                          alt=""
+                                          onError={(ev) => {
+                                            (ev.currentTarget as HTMLImageElement).style.display = "none";
+                                          }}
+                                        />
                                       ) : null}
                                     </div>
+                                    <div className="tokenBadgeText">
+                                      <div className="tokenBadgeTitle">{title}</div>
+                                      <div className="tokenBadgeSubtitle">
+                                        {statusLabel} · {Math.round(pct * 100)}% escrowed
+                                      </div>
+                                    </div>
                                   </div>
-                                ) : null}
+                                </div>
 
-                                {tokenMint ? (
-                                  <div
-                                    className="timelineQuickLinks"
-                                    onClick={(ev) => ev.stopPropagation()}
-                                    onKeyDown={(ev) => ev.stopPropagation()}
-                                  >
-                                    {projectWebsite ? (
-                                      <div className="timelineQuickLink">
-                                        <a
-                                          className="timelineQuickLinkAnchor"
-                                          href={projectWebsite}
-                                          target="_blank"
-                                          rel="noreferrer noopener"
-                                        >
+                                <div className="discoverPills">
+                                  <span className={`discoverPill ${statusLabel === "shipped" ? "discoverPillStrong" : ""}`}>{statusLabel}</span>
+                                  {c.isMock ? <span className="discoverPill">mock</span> : null}
+                                </div>
+                              </div>
+
+                              <div className="discoverCardTitle">{c.statement || "Reward commitment"}</div>
+
+                              <div className="discoverMetrics">
+                                <div className="discoverMetric">
+                                  <div className="discoverMetricLabel">Escrow</div>
+                                  <div className="discoverMetricValue">
+                                    {fmtSol(escrowed)} / {fmtSol(target)} SOL
+                                  </div>
+                                </div>
+                                <div className="discoverMetric">
+                                  <div className="discoverMetricLabel">Milestones</div>
+                                  <div className="discoverMetricValue">
+                                    {c.milestonesDone}/{c.milestonesTotal} done
+                                  </div>
+                                </div>
+                                <div className="discoverMetric">
+                                  <div className="discoverMetricLabel">Momentum</div>
+                                  <div className="discoverMetricValue">
+                                    {c.events24h} /24h · {c.events7d} /7d
+                                  </div>
+                                </div>
+                                <div className="discoverMetric">
+                                  <div className="discoverMetricLabel">Last</div>
+                                  <div className="discoverMetricValue">
+                                    {c.lastActivityUnix ? unixAgoShort(c.lastActivityUnix, nowUnix) : "–"}
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="discoverBar" aria-hidden="true">
+                                <div className="discoverBarFill" style={{ width: `${Math.round(pct * 100)}%` }} />
+                              </div>
+
+                              <div
+                                className="discoverHover"
+                                onClick={(ev) => {
+                                  ev.stopPropagation();
+                                }}
+                                onKeyDown={(ev) => ev.stopPropagation()}
+                              >
+                                <div className="discoverHoverInner">
+                                  <div className="discoverHoverRow">
+                                    <div style={{ minWidth: 0, flex: 1 }}>
+                                      <div className="tokenBadge">
+                                        <div className="tokenBadgeIcon" aria-hidden="true">
+                                          <span className="tokenBadgeFallback" />
+                                          {c.projectImageUrl ? (
+                                            <img
+                                              className="tokenBadgeImg"
+                                              src={c.projectImageUrl}
+                                              alt=""
+                                              onError={(ev) => {
+                                                (ev.currentTarget as HTMLImageElement).style.display = "none";
+                                              }}
+                                            />
+                                          ) : null}
+                                        </div>
+                                        <div className="tokenBadgeText">
+                                          <div className="tokenBadgeTitle">{title}</div>
+                                          <div className="tokenBadgeSubtitle">
+                                            {statusLabel} · {Math.round(pct * 100)}% escrowed
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                    <div className="discoverPills">
+                                      <span className="discoverPill">{c.events24h} /24h</span>
+                                      <span className="discoverPill">{c.events7d} /7d</span>
+                                    </div>
+                                  </div>
+
+                                  <div className="discoverHoverBody">
+                                    {c.projectDesc ? <div className="discoverHoverText">{c.projectDesc}</div> : null}
+                                    {c.statement ? <div className="discoverHoverText">{c.statement}</div> : null}
+
+                                    <div className="discoverHoverSignals">
+                                      {credibilitySignals.map((s) => (
+                                        <span key={s} className="discoverHoverSignal">
+                                          {s}
+                                        </span>
+                                      ))}
+                                      {c.milestonesTotal > 0 ? (
+                                        <span className="discoverHoverSignal">
+                                          milestones {c.milestonesDone}/{c.milestonesTotal}
+                                        </span>
+                                      ) : null}
+                                      {c.tokenMint ? <span className="discoverHoverSignal">CA {shortWallet(c.tokenMint)}</span> : null}
+                                    </div>
+
+                                    <div className="discoverHoverActions">
+                                      {canNavigate ? (
+                                        <button className="discoverAction discoverActionPrimary" type="button" onClick={() => router.push(`/commit/${encodeURIComponent(c.commitmentId)}`)}>
+                                          Open
+                                        </button>
+                                      ) : null}
+                                      {c.websiteUrl ? (
+                                        <a className="discoverAction" href={c.websiteUrl} target="_blank" rel="noreferrer noopener">
                                           Website
                                         </a>
-                                        <div className="timelineQuickHover">
-                                          <div className="timelineQuickHoverTitle">Website</div>
-                                          <div className="timelineQuickHoverValue">{projectWebsite}</div>
-                                        </div>
-                                      </div>
-                                    ) : null}
-
-                                    <div className="timelineQuickLink">
-                                      <button className="timelineQuickLinkBtn" type="button" onClick={() => copyTimeline(tokenMint, caCopyKey)}>
-                                        {timelineCopied === caCopyKey ? "Copied CA" : `CA ${shortWallet(tokenMint)}`}
-                                      </button>
-                                      <div className="timelineQuickHover">
-                                        <div className="timelineQuickHoverTitle">Contract</div>
-                                        <div className="timelineQuickHoverValue mono">{tokenMint}</div>
-                                        <div className="timelineQuickHoverLinks">
-                                          <a
-                                            className="timelineQuickHoverLink"
-                                            href={`https://solscan.io/token/${encodeURIComponent(tokenMint)}`}
-                                            target="_blank"
-                                            rel="noreferrer noopener"
-                                          >
-                                            Solscan
-                                          </a>
-                                          <a
-                                            className="timelineQuickHoverLink"
-                                            href={`https://pump.fun/coin/${encodeURIComponent(tokenMint)}`}
-                                            target="_blank"
-                                            rel="noreferrer noopener"
-                                          >
-                                            pump.fun
-                                          </a>
-                                          <a
-                                            className="timelineQuickHoverLink"
-                                            href={`https://dexscreener.com/solana/${encodeURIComponent(tokenMint)}`}
-                                            target="_blank"
-                                            rel="noreferrer noopener"
-                                          >
-                                            Dexscreener
-                                          </a>
-                                        </div>
-                                      </div>
-                                    </div>
-
-                                    {e.txSig ? (
-                                      <div className="timelineQuickLink">
-                                        <button
-                                          className="timelineQuickLinkBtn"
-                                          type="button"
-                                          onClick={() => copyTimeline(String(e.txSig), txCopyKey)}
+                                      ) : null}
+                                      {c.tokenMint ? (
+                                        <a
+                                          className="discoverAction"
+                                          href={`https://pump.fun/coin/${encodeURIComponent(c.tokenMint)}`}
+                                          target="_blank"
+                                          rel="noreferrer noopener"
                                         >
-                                          {timelineCopied === txCopyKey ? "Copied tx" : "Tx"}
+                                          pump.fun
+                                        </a>
+                                      ) : null}
+                                      {c.tokenMint ? (
+                                        <a
+                                          className="discoverAction"
+                                          href={`https://solscan.io/token/${encodeURIComponent(c.tokenMint)}`}
+                                          target="_blank"
+                                          rel="noreferrer noopener"
+                                        >
+                                          Solscan
+                                        </a>
+                                      ) : null}
+                                      {c.tokenMint ? (
+                                        <button
+                                          className="discoverAction"
+                                          type="button"
+                                          onClick={() => copyTimeline(c.tokenMint, `${c.key}:ca`)}
+                                        >
+                                          {timelineCopied === `${c.key}:ca` ? "Copied" : "Copy CA"}
                                         </button>
-                                        <div className="timelineQuickHover">
-                                          <div className="timelineQuickHoverTitle">Transaction</div>
-                                          <div className="timelineQuickHoverValue mono">{String(e.txSig)}</div>
-                                          <div className="timelineQuickHoverLinks">
-                                            <a
-                                              className="timelineQuickHoverLink"
-                                              href={`https://solscan.io/tx/${encodeURIComponent(String(e.txSig))}`}
-                                              target="_blank"
-                                              rel="noreferrer noopener"
-                                            >
-                                              Solscan
-                                            </a>
-                                          </div>
-                                        </div>
-                                      </div>
-                                    ) : null}
+                                      ) : null}
+                                    </div>
                                   </div>
-                                ) : null}
-
-                                {e.kind === "creator_reward"
-                                  ? (() => {
-                                      const funded = Number(e.totalFundedLamports ?? 0);
-                                      const total = Number(e.milestoneTotalUnlockLamports ?? 0);
-                                      const pct = total > 0 ? clamp01(funded / total) : 0;
-                                      return (
-                                        <div className="timelineCompliance">
-                                          <div className="timelineComplianceBar" aria-hidden="true">
-                                            <div className="timelineComplianceFill" style={{ width: `${Math.round(pct * 100)}%` }} />
-                                          </div>
-                                          <div className="timelineComplianceText">
-                                            Escrowed {fmtSol(funded)} / {fmtSol(total)} SOL ({Math.round(pct * 100)}%)
-                                          </div>
-                                        </div>
-                                      );
-                                    })()
-                                  : null}
-                              </div>
-
-                              <div className="timelineReceiptRight">
-                                {rightAmount ? <div className="timelineReceiptAmount">{rightAmount}</div> : null}
-                                <div className="timelineReceiptTime">{humanTime(e.timestampUnix)}</div>
+                                </div>
                               </div>
                             </div>
-
-                            {open ? (
-                              <div className="timelineReceiptBody">
-                                <div className="timelineReceiptActions">
-                                  <button className="timelineActionBtn" type="button" onClick={() => router.push(`/commit/${e.commitmentId}`)}>
-                                    View dashboard
-                                  </button>
-                                  <button className="timelineActionBtn" type="button" onClick={() => copyTimeline(e.escrowPubkey, escrowCopyKey)}>
-                                    {timelineCopied === escrowCopyKey ? "Copied escrow" : "Copy escrow"}
-                                  </button>
-                                  {e.txSig ? (
-                                    <button className="timelineActionBtn" type="button" onClick={() => copyTimeline(e.txSig as string, txCopyKey)}>
-                                      {timelineCopied === txCopyKey ? "Copied tx" : "Copy tx"}
-                                    </button>
-                                  ) : null}
-                                  {tokenMint ? (
-                                    <button className="timelineActionBtn" type="button" onClick={() => copyTimeline(tokenMint, caCopyKey)}>
-                                      {timelineCopied === caCopyKey ? "Copied CA" : "Copy CA"}
-                                    </button>
-                                  ) : null}
-                                </div>
-
-                                <div className="timelineReceiptGrid">
-                                  <div className="timelineReceiptRow">
-                                    <div className="timelineReceiptLabel">Commitment</div>
-                                    <div className="timelineReceiptValue mono">{e.commitmentId}</div>
-                                  </div>
-                                  <div className="timelineReceiptRow">
-                                    <div className="timelineReceiptLabel">Escrow</div>
-                                    <div className="timelineReceiptValue mono">{e.escrowPubkey}</div>
-                                  </div>
-                                  {e.creatorPubkey ? (
-                                    <div className="timelineReceiptRow">
-                                      <div className="timelineReceiptLabel">Creator</div>
-                                      <div className="timelineReceiptValue">
-                                        {(() => {
-                                          const pk = String(e.creatorPubkey);
-                                          const p = profilesByWallet[pk];
-                                          const label = p?.displayName?.trim() ? String(p.displayName) : shortWallet(pk);
-                                          return (
-                                            <a className="timelineProfileLink" href={`/u/${encodeURIComponent(pk)}`}>
-                                              {p?.avatarUrl ? (
-                                                <img className="timelineProfileAvatar" src={String(p.avatarUrl)} alt="" />
-                                              ) : (
-                                                <span className="timelineProfileAvatarFallback" />
-                                              )}
-                                              <span className="mono">{label}</span>
-                                            </a>
-                                          );
-                                        })()}
-                                      </div>
-                                    </div>
-                                  ) : null}
-                                  {e.authority ? (
-                                    <div className="timelineReceiptRow">
-                                      <div className="timelineReceiptLabel">Authority</div>
-                                      <div className="timelineReceiptValue">
-                                        {(() => {
-                                          const pk = String(e.authority);
-                                          const p = profilesByWallet[pk];
-                                          const label = p?.displayName?.trim() ? String(p.displayName) : shortWallet(pk);
-                                          return (
-                                            <a className="timelineProfileLink" href={`/u/${encodeURIComponent(pk)}`}>
-                                              {p?.avatarUrl ? (
-                                                <img className="timelineProfileAvatar" src={String(p.avatarUrl)} alt="" />
-                                              ) : (
-                                                <span className="timelineProfileAvatarFallback" />
-                                              )}
-                                              <span className="mono">{label}</span>
-                                            </a>
-                                          );
-                                        })()}
-                                      </div>
-                                    </div>
-                                  ) : null}
-                                  {e.txSig ? (
-                                    <div className="timelineReceiptRow">
-                                      <div className="timelineReceiptLabel">Tx</div>
-                                      <div className="timelineReceiptValue mono">{e.txSig}</div>
-                                    </div>
-                                  ) : null}
-                                  {tokenMint ? (
-                                    <div className="timelineReceiptRow">
-                                      <div className="timelineReceiptLabel">CA</div>
-                                      <div className="timelineReceiptValue mono">{tokenMint}</div>
-                                    </div>
-                                  ) : null}
-                                </div>
-                              </div>
-                            ) : null}
-                          </div>
-                        );
+                          );
                         })}
                       </div>
                     )}

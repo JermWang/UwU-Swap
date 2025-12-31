@@ -2,8 +2,30 @@
 
 import { Connection, PublicKey, SystemProgram, Transaction, clusterApiUrl } from "@solana/web3.js";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import bs58 from "bs58";
+import { useToast } from "@/app/components/ToastProvider";
 import styles from "./CommitDashboard.module.css";
+
+type AdminActionModalState =
+  | null
+  | {
+      kind: "resolve";
+      outcome: "success" | "failure";
+      step: "confirm" | "submitting" | "done";
+      result?: any;
+      error?: string;
+    }
+  | {
+      kind: "release";
+      milestoneId: string;
+      milestoneTitle: string;
+      unlockLamports: number;
+      toPubkey: string;
+      step: "confirm" | "submitting" | "done";
+      result?: any;
+      error?: string;
+    };
 
 type ProfileSummary = {
   walletPubkey: string;
@@ -26,6 +48,17 @@ type RewardMilestone = {
 };
 
 type RewardMilestoneApprovalCounts = Record<string, number>;
+
+type ProjectProfileSummary = {
+  tokenMint: string;
+  name?: string | null;
+  symbol?: string | null;
+  websiteUrl?: string | null;
+  xUrl?: string | null;
+  telegramUrl?: string | null;
+  discordUrl?: string | null;
+  imageUrl?: string | null;
+};
 
 type Props = {
   id: string;
@@ -141,6 +174,34 @@ function signalMessage(commitmentId: string, milestoneId: string): string {
 export default function CommitDashboardClient(props: Props) {
   const { escrowPubkey, explorerUrl, id, canMarkFailure, canMarkSuccess, kind } = props;
 
+  const router = useRouter();
+  const toast = useToast();
+
+  async function copyAny(text: string) {
+    try {
+      if (!window.isSecureContext || !navigator.clipboard?.writeText) {
+        throw new Error("Clipboard access is not available in this context");
+      }
+      await navigator.clipboard.writeText(text);
+      toast({ kind: "success", message: "Copied" });
+    } catch (e) {
+      toast({ kind: "error", message: (e as Error).message });
+    }
+  }
+
+  function openExplorerTx(signature: string) {
+    const sig = String(signature ?? "").trim();
+    if (!sig) return;
+    window.open(`https://solscan.io/tx/${encodeURIComponent(sig)}`, "_blank", "noopener,noreferrer");
+  }
+
+  function closeAdminModal(opts?: { refresh?: boolean }) {
+    setAdminModal(null);
+    if (opts?.refresh) {
+      window.setTimeout(() => router.refresh(), 0);
+    }
+  }
+
   const [copied, setCopied] = useState<null | "escrow" | "id">(null);
   const [adminWalletPubkey, setAdminWalletPubkey] = useState<string | null>(null);
   const [adminAuthBusy, setAdminAuthBusy] = useState<string | null>(null);
@@ -177,6 +238,10 @@ export default function CommitDashboardClient(props: Props) {
   const [fundBusy, setFundBusy] = useState<string | null>(null);
   const [fundError, setFundError] = useState<string | null>(null);
   const [fundSignature, setFundSignature] = useState<string | null>(null);
+
+  const [projectProfile, setProjectProfile] = useState<ProjectProfileSummary | null>(null);
+
+  const [adminModal, setAdminModal] = useState<AdminActionModalState>(null);
 
   const canAdminAct = useMemo(() => Boolean(adminWalletPubkey) && adminBusy == null, [adminWalletPubkey, adminBusy]);
 
@@ -232,9 +297,12 @@ export default function CommitDashboardClient(props: Props) {
       const signature = bs58.encode(signatureBytes);
 
       await jsonPost(`/api/commitments/${id}/milestones/${milestoneId}/complete`, { message, signature });
-      window.location.reload();
+      toast({ kind: "success", message: "Milestone marked complete" });
+      router.refresh();
     } catch (e) {
-      setCreatorError((e as Error).message);
+      const msg = (e as Error).message;
+      setCreatorError(msg);
+      toast({ kind: "error", message: msg });
     } finally {
       setCreatorBusy(null);
     }
@@ -330,9 +398,12 @@ export default function CommitDashboardClient(props: Props) {
       );
 
       setFundSignature(signature);
-      window.location.reload();
+      toast({ kind: "success", message: "Funding transaction submitted" });
+      router.refresh();
     } catch (e) {
-      setFundError((e as Error).message);
+      const msg = (e as Error).message;
+      setFundError(msg);
+      toast({ kind: "error", message: msg });
     } finally {
       setFundBusy(null);
     }
@@ -373,7 +444,46 @@ export default function CommitDashboardClient(props: Props) {
         });
       })
       .catch(() => null);
-  }, [props.creatorPubkey, props.authority, profilesByWallet]);
+  }, [profilesByWallet, props.authority, props.creatorPubkey]);
+
+  useEffect(() => {
+    const mint = String(props.tokenMint ?? "").trim();
+    if (!mint) {
+      setProjectProfile(null);
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/projects/${encodeURIComponent(mint)}`, { cache: "no-store" });
+        const json = await readJsonSafe(res);
+        if (!res.ok) return;
+        const p = json?.project ?? null;
+        if (cancelled) return;
+        if (!p?.tokenMint) {
+          setProjectProfile(null);
+          return;
+        }
+        setProjectProfile({
+          tokenMint: String(p.tokenMint),
+          name: p.name ?? null,
+          symbol: p.symbol ?? null,
+          websiteUrl: p.websiteUrl ?? null,
+          xUrl: p.xUrl ?? null,
+          telegramUrl: p.telegramUrl ?? null,
+          discordUrl: p.discordUrl ?? null,
+          imageUrl: p.imageUrl ?? null,
+        });
+      } catch {
+        // ignore
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [props.tokenMint]);
 
   async function connectPumpCreatorWallet() {
     setPumpError(null);
@@ -565,9 +675,12 @@ export default function CommitDashboardClient(props: Props) {
       const message = signalMessage(id, milestoneId);
       const signature = (override?.signature ?? signalSignatureInput[milestoneId] ?? "").trim();
       await jsonPost(`/api/commitments/${id}/milestones/${milestoneId}/signal`, { signerPubkey, message, signature });
-      window.location.reload();
+      toast({ kind: "success", message: "Vote submitted" });
+      router.refresh();
     } catch (e) {
-      setSignalError((e as Error).message);
+      const msg = (e as Error).message;
+      setSignalError(msg);
+      toast({ kind: "error", message: msg });
     } finally {
       setSignalBusy(null);
     }
@@ -637,33 +750,181 @@ export default function CommitDashboardClient(props: Props) {
   }
 
   async function releaseMilestone(milestoneId: string) {
-    setAdminError(null);
-    setAdminBusy(`release:${milestoneId}`);
-    try {
-      await adminPost(`/api/commitments/${id}/milestones/${milestoneId}/release`);
-      window.location.reload();
-    } catch (e) {
-      setAdminError((e as Error).message);
-    } finally {
-      setAdminBusy(null);
-    }
+    const m = (props.milestones ?? []).find((x) => x.id === milestoneId);
+    const title = String(m?.title ?? "Milestone");
+    const unlockLamports = Number(m?.unlockLamports ?? 0);
+    const toPubkey = String(props.creatorPubkey ?? "");
+    setAdminModal({ kind: "release", milestoneId, milestoneTitle: title, unlockLamports, toPubkey, step: "confirm" });
   }
 
   async function resolve(kind: "success" | "failure") {
+    setAdminModal({ kind: "resolve", outcome: kind, step: "confirm" });
+  }
+
+  async function submitAdminModal() {
+    if (!adminModal) return;
     setAdminError(null);
-    setAdminBusy(kind);
-    try {
-      await adminPost(`/api/commitments/${id}/${kind}`);
-      window.location.reload();
-    } catch (e) {
-      setAdminError((e as Error).message);
-    } finally {
-      setAdminBusy(null);
+
+    if (adminModal.kind === "release") {
+      setAdminBusy(`release:${adminModal.milestoneId}`);
+      setAdminModal({ ...adminModal, step: "submitting", error: undefined });
+      try {
+        const res = await adminPost(`/api/commitments/${id}/milestones/${adminModal.milestoneId}/release`);
+        setAdminModal({ ...adminModal, step: "done", result: res });
+        const sig = String(res?.signature ?? "").trim();
+        toast({ kind: "success", message: sig ? `Release submitted: ${sig}` : "Release submitted" });
+      } catch (e) {
+        const msg = (e as Error).message;
+        setAdminError(msg);
+        setAdminModal({ ...adminModal, step: "confirm", error: msg });
+        toast({ kind: "error", message: msg });
+      } finally {
+        setAdminBusy(null);
+      }
+      return;
+    }
+
+    if (adminModal.kind === "resolve") {
+      setAdminBusy(adminModal.outcome);
+      setAdminModal({ ...adminModal, step: "submitting", error: undefined });
+      try {
+        const res = await adminPost(`/api/commitments/${id}/${adminModal.outcome}`);
+        setAdminModal({ ...adminModal, step: "done", result: res });
+
+        const sig =
+          String(res?.signature ?? "").trim() ||
+          String(res?.buyback?.signature ?? "").trim() ||
+          String(res?.voterPot?.txSig ?? "").trim();
+
+        toast({
+          kind: "success",
+          message: sig ? `Marked ${adminModal.outcome}: ${sig}` : adminModal.outcome === "success" ? "Marked success" : "Marked failure",
+        });
+      } catch (e) {
+        const msg = (e as Error).message;
+        setAdminError(msg);
+        setAdminModal({ ...adminModal, step: "confirm", error: msg });
+        toast({ kind: "error", message: msg });
+      } finally {
+        setAdminBusy(null);
+      }
     }
   }
 
   return (
     <div className={styles.lower}>
+      {adminModal ? (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.64)",
+            zIndex: 120,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 18,
+          }}
+          role="dialog"
+          aria-modal="true"
+        >
+          <div
+            style={{
+              width: "min(640px, 96vw)",
+              borderRadius: 16,
+              border: "1px solid rgba(255,255,255,0.16)",
+              background: "rgba(0,0,0,0.92)",
+              padding: 18,
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+              <div style={{ fontWeight: 700 }}>
+                {adminModal.kind === "release" ? "Confirm Release" : adminModal.outcome === "success" ? "Confirm Mark Success" : "Confirm Mark Failure"}
+              </div>
+              <button
+                className={styles.actionBtn}
+                type="button"
+                onClick={() => closeAdminModal({ refresh: adminModal.step === "done" })}
+                disabled={adminModal.step === "submitting"}
+              >
+                Close
+              </button>
+            </div>
+
+            <div className={styles.smallNote} style={{ marginTop: 10 }}>
+              This action is irreversible.
+            </div>
+
+            {adminModal.kind === "release" ? (
+              <div className={styles.smallNote} style={{ marginTop: 10 }}>
+                Release <strong>{adminModal.milestoneTitle}</strong> for <strong>{fmtSol(adminModal.unlockLamports)} SOL</strong> to
+                <span className={styles.mono}> {adminModal.toPubkey || "creator"}</span>.
+              </div>
+            ) : (
+              <div className={styles.smallNote} style={{ marginTop: 10 }}>
+                Mark commitment <span className={styles.mono}>{id}</span> as <strong>{adminModal.outcome}</strong>.
+              </div>
+            )}
+
+            {adminModal.error ? (
+              <div className={styles.smallNote} style={{ marginTop: 12, color: "rgba(180, 40, 60, 0.86)" }}>
+                {adminModal.error}
+              </div>
+            ) : null}
+
+            {adminModal.step === "done" ? (
+              (() => {
+                const res: any = (adminModal as any).result;
+                const sig =
+                  String(res?.signature ?? "").trim() ||
+                  String(res?.buyback?.signature ?? "").trim() ||
+                  String(res?.voterPot?.txSig ?? "").trim();
+                return (
+                  <div style={{ marginTop: 12 }}>
+                    <div className={styles.smallNote} style={{ marginTop: 10 }}>
+                      Submitted.
+                    </div>
+                    {sig ? (
+                      <div className={styles.smallNote} style={{ marginTop: 8 }}>
+                        txSig=<span className={styles.mono}>{sig}</span>
+                      </div>
+                    ) : null}
+                    <div className={styles.actions} style={{ marginTop: 12, justifyContent: "flex-start" }}>
+                      {sig ? (
+                        <>
+                          <button className={styles.actionBtn} type="button" onClick={() => copyAny(sig)}>
+                            Copy tx
+                          </button>
+                          <button className={`${styles.actionBtn} ${styles.actionPrimary}`} type="button" onClick={() => openExplorerTx(sig)}>
+                            Open explorer
+                          </button>
+                        </>
+                      ) : null}
+                      <button className={styles.actionBtn} type="button" onClick={() => closeAdminModal({ refresh: true })}>
+                        Done
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()
+            ) : (
+              <div className={styles.actions} style={{ marginTop: 14, justifyContent: "flex-start" }}>
+                <button
+                  className={`${styles.actionBtn} ${styles.actionPrimary}`}
+                  type="button"
+                  onClick={submitAdminModal}
+                  disabled={adminModal.step === "submitting" || adminBusy != null}
+                >
+                  {adminModal.step === "submitting" ? "Submitting…" : "Confirm"}
+                </button>
+                <button className={styles.actionBtn} type="button" onClick={() => closeAdminModal()} disabled={adminModal.step === "submitting"}>
+                  Cancel
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : null}
       <div className={styles.primaryFlow}>
         {kind === "personal" ? (
           <div className={styles.primarySection}>
