@@ -214,11 +214,11 @@ body {
   position: relative;
 }
 
-body[data-skin="landing"]::before {
+body::before {
   content: "";
   position: fixed;
   inset: -1px;
-  z-index: 1;
+  z-index: 0;
   pointer-events: none;
   background:
     radial-gradient(1200px 900px at 35% 18%, rgba(255, 255, 255, 0.08), rgba(0, 0, 0, 0) 62%),
@@ -228,11 +228,11 @@ body[data-skin="landing"]::before {
   animation: auraDrift 28s ease-in-out infinite;
 }
 
-body[data-skin="landing"]::after {
+body::after {
   content: "";
   position: fixed;
   inset: -1px;
-  z-index: 1;
+  z-index: 0;
   pointer-events: none;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.95' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23n)' opacity='.32'/%3E%3C/svg%3E");
   background-size: 240px 240px;
@@ -263,8 +263,8 @@ body[data-skin="landing"]::after {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  body[data-skin="landing"]::before,
-  body[data-skin="landing"]::after {
+  body::before,
+  body::after {
     animation: none;
   }
 }
@@ -1398,21 +1398,11 @@ body[data-skin="landing"] .landingRight {
 }
 
 .ascii-waves {
-  position: absolute;
+  position: fixed;
   inset: 0;
   z-index: 1;
-  opacity: 0.22;
-  pointer-events: none;
-}
-
-body[data-skin="landing"] .ascii-waves,
-html[data-skin="landing"] .ascii-waves {
   opacity: 0.70;
-}
-
-body[data-skin="app"] .ascii-waves,
-html[data-skin="app"] .ascii-waves {
-  opacity: 0.22;
+  pointer-events: none;
 }
 
 .landingCtas {

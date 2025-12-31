@@ -1,13 +1,10 @@
 import { NextResponse } from "next/server";
 import crypto from "crypto";
-
 import { PublicKey } from "@solana/web3.js";
-import nacl from "tweetnacl";
-import bs58 from "bs58";
 
-import { checkRateLimit } from "../../../../lib/rateLimit";
-import { getSafeErrorMessage } from "../../../../lib/safeError";
-import { getConnection, getMintAuthorityBase58, getTokenMetadataUpdateAuthorityBase58 } from "../../../../lib/solana";
+import { checkRateLimit } from "../../../../../lib/rateLimit";
+import { getSafeErrorMessage } from "../../../../../lib/safeError";
+import { getAdminSessionWallet, verifyAdminOrigin } from "../../../../../lib/adminSession";
 
 export const runtime = "nodejs";
 
@@ -37,12 +34,17 @@ function extFromContentType(contentType: string): string {
 
 export async function POST(req: Request) {
   try {
-    const rl = await checkRateLimit(req, { keyPrefix: "project-assets:upload-url", limit: 30, windowSeconds: 60 });
+    const rl = await checkRateLimit(req, { keyPrefix: "admin:project-assets:upload-url", limit: 30, windowSeconds: 60 });
     if (!rl.allowed) {
       const res = NextResponse.json({ error: "Rate limit exceeded" }, { status: 429 });
       res.headers.set("retry-after", String(rl.retryAfterSeconds));
       return res;
     }
+
+    verifyAdminOrigin(req);
+
+    const walletPubkey = await getAdminSessionWallet(req);
+    if (!walletPubkey) return NextResponse.json({ error: "Admin sign-in required" }, { status: 401 });
 
     const body = (await req.json().catch(() => null)) as any;
 
@@ -56,38 +58,6 @@ export async function POST(req: Request) {
     const contentType = typeof body?.contentType === "string" ? body.contentType.trim() : "image/png";
     if (!contentType.toLowerCase().startsWith("image/")) {
       return NextResponse.json({ error: "contentType must be an image" }, { status: 400 });
-    }
-
-    const devVerify = body?.devVerify as any;
-    const devWalletPubkey = typeof devVerify?.walletPubkey === "string" ? devVerify.walletPubkey.trim() : "";
-    const signatureB58 = typeof devVerify?.signatureB58 === "string" ? devVerify.signatureB58.trim() : "";
-    const timestampUnix = Number(devVerify?.timestampUnix);
-    if (!devWalletPubkey || !signatureB58 || !Number.isFinite(timestampUnix) || timestampUnix <= 0) {
-      return NextResponse.json({ error: "devVerify (walletPubkey, signatureB58, timestampUnix) is required" }, { status: 400 });
-    }
-
-    const devWallet = new PublicKey(devWalletPubkey);
-    const nowUnix = Math.floor(Date.now() / 1000);
-    if (Math.abs(nowUnix - timestampUnix) > 5 * 60) {
-      return NextResponse.json({ error: "Verification timestamp expired" }, { status: 400 });
-    }
-
-    const message = `Commit To Ship\nDev Verification\nMint: ${tokenMint}\nWallet: ${devWallet.toBase58()}\nTimestamp: ${timestampUnix}`;
-    const signature = bs58.decode(signatureB58);
-    const okSig = nacl.sign.detached.verify(new TextEncoder().encode(message), signature, devWallet.toBytes());
-    if (!okSig) {
-      return NextResponse.json({ error: "Invalid dev verification signature" }, { status: 401 });
-    }
-
-    const connection = getConnection();
-    const [mintAuthority, updateAuthority] = await Promise.all([
-      getMintAuthorityBase58({ connection, mint: new PublicKey(tokenMint) }),
-      getTokenMetadataUpdateAuthorityBase58({ connection, mint: new PublicKey(tokenMint) }),
-    ]);
-
-    const okAuthority = mintAuthority === devWallet.toBase58() || updateAuthority === devWallet.toBase58();
-    if (!okAuthority) {
-      return NextResponse.json({ error: "Wallet is not token authority", mintAuthority, updateAuthority }, { status: 403 });
     }
 
     const bucket = String(process.env.SUPABASE_PROJECT_ASSETS_BUCKET ?? "project-assets").trim() || "project-assets";
@@ -127,6 +97,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       ok: true,
+      walletPubkey,
       bucket,
       path,
       token,

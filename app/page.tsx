@@ -310,6 +310,49 @@ export default function Home() {
     setDeadlineLocal(datetimeLocalFromUnix(nowUnix + hoursFromNow * 60 * 60));
   }
 
+  function isAllowedPumpfunImageType(contentType: string): boolean {
+    const ct = String(contentType || "").toLowerCase();
+    return ct === "image/png" || ct === "image/jpeg" || ct === "image/jpg" || ct === "image/webp" || ct === "image/gif";
+  }
+
+  async function readImageDimensions(file: File): Promise<{ width: number; height: number }> {
+    const url = URL.createObjectURL(file);
+    try {
+      const img = document.createElement("img");
+      const dims = await new Promise<{ width: number; height: number }>((resolve, reject) => {
+        img.onload = () => resolve({ width: img.naturalWidth || img.width, height: img.naturalHeight || img.height });
+        img.onerror = () => reject(new Error("Failed to read image dimensions"));
+        img.src = url;
+      });
+      return dims;
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  }
+
+  async function validatePumpfunAsset(file: File, kind: "icon" | "banner"): Promise<void> {
+    if (!isAllowedPumpfunImageType(file.type)) {
+      throw new Error("Unsupported image type. Use .jpg, .png, .gif, or .webp (pump.fun)");
+    }
+
+    if (kind === "icon") {
+      const maxBytes = 15 * 1024 * 1024;
+      if (file.size > maxBytes) throw new Error("Icon must be 15MB or smaller (pump.fun)");
+      const { width, height } = await readImageDimensions(file);
+      if (width < 1000 || height < 1000) throw new Error("Icon must be at least 1000×1000 (pump.fun)");
+      const ratio = width / Math.max(1, height);
+      if (Math.abs(ratio - 1) > 0.05) throw new Error("Icon should be square (1:1) (pump.fun)");
+      return;
+    }
+
+    const maxBytes = 5 * 1024 * 1024;
+    if (file.size > maxBytes) throw new Error("Banner must be 5MB or smaller (pump.fun)");
+    const { width, height } = await readImageDimensions(file);
+    if (width < 1500 || height < 500) throw new Error("Banner should be at least 1500×500 (pump.fun)");
+    const ratio = width / Math.max(1, height);
+    if (Math.abs(ratio - 3) > 0.1) throw new Error("Banner should be ~3:1 aspect ratio (pump.fun)");
+  }
+
   async function readJsonSafe(res: Response): Promise<any> {
     const contentType = res.headers.get("content-type") ?? "";
     const text = await res.text();
@@ -358,6 +401,41 @@ export default function Home() {
       kind: input.kind,
       contentType: input.file.type || "image/png",
       devVerify,
+    });
+
+    const signedUrl = String(info?.signedUrl ?? "");
+    if (!signedUrl) throw new Error("Missing signedUrl");
+
+    const form = new FormData();
+    form.append("cacheControl", "3600");
+    form.append("", input.file);
+
+    const uploadRes = await fetch(signedUrl, {
+      method: "PUT",
+      headers: { "x-upsert": "true" },
+      body: form,
+    });
+
+    if (!uploadRes.ok) {
+      const text = await uploadRes.text().catch(() => "");
+      throw new Error(`Upload failed (${uploadRes.status}) ${text}`);
+    }
+
+    const publicUrl = String(info?.publicUrl ?? "");
+    const path = String(info?.path ?? "");
+    if (!publicUrl) throw new Error("Missing publicUrl");
+    return { publicUrl, path };
+  }
+
+  async function uploadAdminProjectAsset(input: { kind: "icon" | "banner"; file: File }): Promise<{ publicUrl: string; path: string }> {
+    if (!adminWalletPubkey) throw new Error("Admin sign-in required");
+    const mint = projectEditMint.trim();
+    if (!mint) throw new Error("Token mint required");
+
+    const info = await apiPost<any>("/api/admin/projects/assets/upload-url", {
+      tokenMint: mint,
+      kind: input.kind,
+      contentType: input.file.type || "image/png",
     });
 
     const signedUrl = String(info?.signedUrl ?? "");
@@ -1569,7 +1647,7 @@ export default function Home() {
                                     Upload
                                     <input
                                       type="file"
-                                      accept="image/png,image/jpeg,image/webp"
+                                      accept="image/png,image/jpeg,image/webp,image/gif"
                                       style={{ display: "none" }}
                                       disabled={busy != null}
                                       onChange={async (e) => {
@@ -1579,6 +1657,7 @@ export default function Home() {
                                         setError(null);
                                         setBusy("upload:icon");
                                         try {
+                                          await validatePumpfunAsset(f, "icon");
                                           const { publicUrl } = await uploadProjectAsset({ kind: "icon", file: f });
                                           setDraftImageUrl(publicUrl);
                                         } catch (err) {
@@ -1600,7 +1679,7 @@ export default function Home() {
                                       Upload
                                       <input
                                         type="file"
-                                        accept="image/png,image/jpeg,image/webp"
+                                        accept="image/png,image/jpeg,image/webp,image/gif"
                                         style={{ display: "none" }}
                                         disabled={busy != null}
                                         onChange={async (e) => {
@@ -1610,6 +1689,7 @@ export default function Home() {
                                           setError(null);
                                           setBusy("upload:banner");
                                           try {
+                                            await validatePumpfunAsset(f, "banner");
                                             const { publicUrl } = await uploadProjectAsset({ kind: "banner", file: f });
                                             setDraftBannerUrl(publicUrl);
                                           } catch (err) {
@@ -2146,12 +2226,68 @@ export default function Home() {
                             <input className="commitInput" value={projectEditDiscord} onChange={(e) => setProjectEditDiscord(e.target.value)} placeholder="https://discord.gg/..." />
                           </div>
                           <div className="commitField" style={{ marginTop: 18 }}>
-                            <div className="commitFieldLabel">Image URL</div>
-                            <input className="commitInput" value={projectEditImageUrl} onChange={(e) => setProjectEditImageUrl(e.target.value)} placeholder="https://..." />
+                            <div className="commitFieldLabel">Image</div>
+                            <div className="commitInputWithUnit">
+                              <input className="commitInput" value={projectEditImageUrl ? "Uploaded" : ""} disabled placeholder="Click upload" />
+                              <label className="commitInputUnit" style={{ cursor: projectEditBusy != null ? "not-allowed" : "pointer" }}>
+                                Upload
+                                <input
+                                  type="file"
+                                  accept="image/png,image/jpeg,image/webp,image/gif"
+                                  style={{ display: "none" }}
+                                  disabled={projectEditBusy != null}
+                                  onChange={async (e) => {
+                                    const f = e.currentTarget.files?.[0];
+                                    e.currentTarget.value = "";
+                                    if (!f) return;
+                                    setProjectEditError(null);
+                                    setProjectEditResult(null);
+                                    setProjectEditBusy("upload:image");
+                                    try {
+                                      await validatePumpfunAsset(f, "icon");
+                                      const { publicUrl } = await uploadAdminProjectAsset({ kind: "icon", file: f });
+                                      setProjectEditImageUrl(publicUrl);
+                                    } catch (err) {
+                                      setProjectEditError((err as Error).message);
+                                    } finally {
+                                      setProjectEditBusy(null);
+                                    }
+                                  }}
+                                />
+                              </label>
+                            </div>
                           </div>
                           <div className="commitField" style={{ marginTop: 18 }}>
-                            <div className="commitFieldLabel">Banner URL</div>
-                            <input className="commitInput" value={projectEditBannerUrl} onChange={(e) => setProjectEditBannerUrl(e.target.value)} placeholder="https://..." />
+                            <div className="commitFieldLabel">Banner</div>
+                            <div className="commitInputWithUnit">
+                              <input className="commitInput" value={projectEditBannerUrl ? "Uploaded" : ""} disabled placeholder="Click upload" />
+                              <label className="commitInputUnit" style={{ cursor: projectEditBusy != null ? "not-allowed" : "pointer" }}>
+                                Upload
+                                <input
+                                  type="file"
+                                  accept="image/png,image/jpeg,image/webp,image/gif"
+                                  style={{ display: "none" }}
+                                  disabled={projectEditBusy != null}
+                                  onChange={async (e) => {
+                                    const f = e.currentTarget.files?.[0];
+                                    e.currentTarget.value = "";
+                                    if (!f) return;
+                                    setProjectEditError(null);
+                                    setProjectEditResult(null);
+                                    setProjectEditBusy("upload:banner");
+                                    try {
+                                      await validatePumpfunAsset(f, "banner");
+                                      const { publicUrl } = await uploadAdminProjectAsset({ kind: "banner", file: f });
+                                      setProjectEditBannerUrl(publicUrl);
+                                    } catch (err) {
+                                      setProjectEditError((err as Error).message);
+                                    } finally {
+                                      setProjectEditBusy(null);
+                                    }
+                                  }}
+                                />
+                              </label>
+                            </div>
                           </div>
                           <div className="commitField" style={{ marginTop: 18 }}>
                             <div className="commitFieldLabel">Metadata URI</div>
