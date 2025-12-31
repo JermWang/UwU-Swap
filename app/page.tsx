@@ -926,7 +926,8 @@ export default function Home() {
       sorted.sort((a, b) => b.lastActivityUnix - a.lastActivityUnix || b.key.localeCompare(a.key));
     }
 
-    const need = Math.max(0, 24 - sorted.length);
+    const minCards = 6;
+    const need = Math.max(0, minCards - sorted.length);
     if (need === 0) return sorted;
 
     const mock: DiscoverCard[] = [
@@ -1004,31 +1005,6 @@ export default function Home() {
         lastActivityUnix: nowUnix - 3600 * 9,
         events24h: 2,
         events7d: 8,
-      },
-      {
-        key: "mock:shipyard-os",
-        isMock: true,
-        commitmentId: "",
-        tokenMint: "SHIP9o9w4xD4mQdK9mZ2bYJrQyR2YVx7QxF1X9mZp4",
-        projectName: "Shipyard OS",
-        projectSymbol: "YARD",
-        projectImageUrl: "",
-        projectDesc: "A lightweight, opinionated release system for crypto teams: escrowed milestones + deterministic deployment receipts.",
-        websiteUrl: "https://shipyardos.com",
-        xUrl: "https://x.com/shipyardos",
-        telegramUrl: "",
-        discordUrl: "",
-        statement: "Deliver staged release receipts + admin audit trail",
-        status: "completed",
-        creatorFeeMode: "managed",
-        escrowedLamports: 55_000_000_000,
-        targetLamports: 55_000_000_000,
-        milestonesTotal: 4,
-        milestonesDone: 4,
-        milestonesReleased: 4,
-        lastActivityUnix: nowUnix - 86400 * 2,
-        events24h: 0,
-        events7d: 6,
       },
     ];
 
@@ -1579,6 +1555,7 @@ export default function Home() {
                                     <path d="M9.5 12.5l1.9 2 3.1-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                                   </svg>
                                 </div>
+
                                 <div className="commitTypeName">Automated Commit</div>
                                 <div className="commitTypeDesc">High-trust. Protocol enforces fee locking + milestone gating.</div>
                               </button>
@@ -2519,6 +2496,7 @@ export default function Home() {
                           if (c.events24h >= 5) credibilitySignals.push("high momentum");
 
                           const canNavigate = !c.isMock && c.commitmentId;
+                          const caKey = `${c.key}:ca`;
 
                           return (
                             <div
@@ -2593,106 +2571,91 @@ export default function Home() {
                                 <div className="discoverBarFill" style={{ width: `${Math.round(pct * 100)}%` }} />
                               </div>
 
-                              <div
-                                className="discoverHover"
-                                onClick={(ev) => {
-                                  ev.stopPropagation();
-                                }}
-                                onKeyDown={(ev) => ev.stopPropagation()}
-                              >
-                                <div className="discoverHoverInner">
-                                  <div className="discoverHoverRow">
-                                    <div style={{ minWidth: 0, flex: 1 }}>
-                                      <div className="tokenBadge">
-                                        <div className="tokenBadgeIcon" aria-hidden="true">
-                                          <span className="tokenBadgeFallback" />
-                                          {c.projectImageUrl ? (
-                                            <img
-                                              className="tokenBadgeImg"
-                                              src={c.projectImageUrl}
-                                              alt=""
-                                              onError={(ev) => {
-                                                (ev.currentTarget as HTMLImageElement).style.display = "none";
-                                              }}
-                                            />
-                                          ) : null}
-                                        </div>
-                                        <div className="tokenBadgeText">
-                                          <div className="tokenBadgeTitle">{title}</div>
-                                          <div className="tokenBadgeSubtitle">
-                                            {statusLabel} · {Math.round(pct * 100)}% escrowed
-                                          </div>
-                                        </div>
+                              <div className="discoverFoot" onClick={(ev) => ev.stopPropagation()} onKeyDown={(ev) => ev.stopPropagation()}>
+                                <div className="discoverFootLeft">
+                                  {c.tokenMint ? (
+                                    <button
+                                      className="discoverCopy"
+                                      type="button"
+                                      onClick={() => copyTimeline(c.tokenMint, caKey)}
+                                      title="Copy contract address"
+                                    >
+                                      <span className="discoverCopyLabel">CA</span>
+                                      <span className="discoverCopyValue mono">{shortWallet(c.tokenMint)}</span>
+                                      <span className="discoverCopyHint">{timelineCopied === caKey ? "copied" : "copy"}</span>
+                                    </button>
+                                  ) : null}
+                                </div>
+
+                                <div className="discoverFootRight">
+                                  {c.websiteUrl ? (
+                                    <div className="timelineQuickLink">
+                                      <a
+                                        className="timelineSocialLink"
+                                        href={c.websiteUrl}
+                                        target="_blank"
+                                        rel="noreferrer noopener"
+                                        aria-label="Website"
+                                        title="Website"
+                                      >
+                                        <SocialIcon type="website" />
+                                      </a>
+                                      <div className="timelineQuickHover">
+                                        <div className="timelineQuickHoverTitle">Website</div>
+                                        <div className="timelineQuickHoverValue">{c.websiteUrl}</div>
                                       </div>
                                     </div>
-                                    <div className="discoverPills">
-                                      <span className="discoverPill">{c.events24h} /24h</span>
-                                      <span className="discoverPill">{c.events7d} /7d</span>
+                                  ) : null}
+                                  {c.xUrl ? (
+                                    <div className="timelineQuickLink">
+                                      <a className="timelineSocialLink" href={c.xUrl} target="_blank" rel="noreferrer noopener" aria-label="X" title="X">
+                                        <SocialIcon type="x" />
+                                      </a>
+                                      <div className="timelineQuickHover">
+                                        <div className="timelineQuickHoverTitle">X</div>
+                                        <div className="timelineQuickHoverValue">{c.xUrl}</div>
+                                      </div>
                                     </div>
-                                  </div>
-
-                                  <div className="discoverHoverBody">
-                                    {c.projectDesc ? <div className="discoverHoverText">{c.projectDesc}</div> : null}
-                                    {c.statement ? <div className="discoverHoverText">{c.statement}</div> : null}
-
-                                    <div className="discoverHoverSignals">
-                                      {credibilitySignals.map((s) => (
-                                        <span key={s} className="discoverHoverSignal">
-                                          {s}
-                                        </span>
-                                      ))}
-                                      {c.milestonesTotal > 0 ? (
-                                        <span className="discoverHoverSignal">
-                                          milestones {c.milestonesDone}/{c.milestonesTotal}
-                                        </span>
-                                      ) : null}
-                                      {c.tokenMint ? <span className="discoverHoverSignal">CA {shortWallet(c.tokenMint)}</span> : null}
+                                  ) : null}
+                                  {c.telegramUrl ? (
+                                    <div className="timelineQuickLink">
+                                      <a
+                                        className="timelineSocialLink"
+                                        href={c.telegramUrl}
+                                        target="_blank"
+                                        rel="noreferrer noopener"
+                                        aria-label="Telegram"
+                                        title="Telegram"
+                                      >
+                                        <SocialIcon type="telegram" />
+                                      </a>
+                                      <div className="timelineQuickHover">
+                                        <div className="timelineQuickHoverTitle">Telegram</div>
+                                        <div className="timelineQuickHoverValue">{c.telegramUrl}</div>
+                                      </div>
                                     </div>
-
-                                    <div className="discoverHoverActions">
-                                      {canNavigate ? (
-                                        <button className="discoverAction discoverActionPrimary" type="button" onClick={() => router.push(`/commit/${encodeURIComponent(c.commitmentId)}`)}>
-                                          Open
-                                        </button>
-                                      ) : null}
-                                      {c.websiteUrl ? (
-                                        <a className="discoverAction" href={c.websiteUrl} target="_blank" rel="noreferrer noopener">
-                                          Website
-                                        </a>
-                                      ) : null}
-                                      {c.tokenMint ? (
-                                        <a
-                                          className="discoverAction"
-                                          href={`https://pump.fun/coin/${encodeURIComponent(c.tokenMint)}`}
-                                          target="_blank"
-                                          rel="noreferrer noopener"
-                                        >
-                                          pump.fun
-                                        </a>
-                                      ) : null}
-                                      {c.tokenMint ? (
-                                        <a
-                                          className="discoverAction"
-                                          href={`https://solscan.io/token/${encodeURIComponent(c.tokenMint)}`}
-                                          target="_blank"
-                                          rel="noreferrer noopener"
-                                        >
-                                          Solscan
-                                        </a>
-                                      ) : null}
-                                      {c.tokenMint ? (
-                                        <button
-                                          className="discoverAction"
-                                          type="button"
-                                          onClick={() => copyTimeline(c.tokenMint, `${c.key}:ca`)}
-                                        >
-                                          {timelineCopied === `${c.key}:ca` ? "Copied" : "Copy CA"}
-                                        </button>
-                                      ) : null}
+                                  ) : null}
+                                  {c.discordUrl ? (
+                                    <div className="timelineQuickLink">
+                                      <a
+                                        className="timelineSocialLink"
+                                        href={c.discordUrl}
+                                        target="_blank"
+                                        rel="noreferrer noopener"
+                                        aria-label="Discord"
+                                        title="Discord"
+                                      >
+                                        <SocialIcon type="discord" />
+                                      </a>
+                                      <div className="timelineQuickHover">
+                                        <div className="timelineQuickHoverTitle">Discord</div>
+                                        <div className="timelineQuickHoverValue">{c.discordUrl}</div>
+                                      </div>
                                     </div>
-                                  </div>
+                                  ) : null}
                                 </div>
                               </div>
+
                             </div>
                           );
                         })}
