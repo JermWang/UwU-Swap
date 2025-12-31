@@ -1204,6 +1204,10 @@ export default function Home() {
                             <div className="commitCardLabel">Review</div>
                             <div className="commitCardDesc">Confirm the terms below. You will get an escrow address after creation.</div>
 
+                            <div className="commitCardDesc" style={{ marginTop: 12 }}>
+                              Funds are held in an escrow wallet controlled by this service (custodial). An admin wallet can mark success/failure and trigger on-chain transfers according to the rules shown on the dashboard.
+                            </div>
+
                             {commitIssues.length ? (
                               <div className="commitIssues">
                                 {commitIssues.map((x) => (
@@ -1349,6 +1353,10 @@ export default function Home() {
                           <section className="commitCard">
                             <div className="commitCardLabel">Review</div>
                             <div className="commitCardDesc">Confirm the terms below. You will get an escrow address after creation.</div>
+
+                            <div className="commitCardDesc" style={{ marginTop: 12 }}>
+                              Milestone release is admin-triggered (explicit on-chain transfer). Holder votes are signals that contribute toward unlock eligibility; they do not move funds by themselves. Escrow funding can be underfunded in assisted mode.
+                            </div>
 
                             {commitIssues.length ? (
                               <div className="commitIssues">
@@ -1670,9 +1678,6 @@ export default function Home() {
 
                   <section className="unifiedPanel">
                     <div className="timelineHero">
-                      <div className="timelineHeroMark">
-                        <img src="/branding/svg-logo.svg" alt="Commit To Ship" className="timelineHeroMarkImg" />
-                      </div>
                       <h1 className="timelineHeroTitle">Discovery Timeline</h1>
                       <p className="timelineHeroLead">A living record of execution. No posts. Only verifiable commitment events.</p>
                     </div>

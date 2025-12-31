@@ -15,7 +15,7 @@ import {
   upsertRewardVoterSnapshot,
 } from "../../../../../../lib/escrowStore";
 import { getChainUnixTime, getConnection, getTokenBalanceForMint, hasAnyTokenBalanceForMint } from "../../../../../../lib/solana";
-import { getCachedJupiterPriceUsd, setCachedJupiterPriceUsd } from "../../../../../../lib/priceCache";
+import { getCachedJupiterPriceUsd, getCachedJupiterPriceUsdAllowStale, setCachedJupiterPriceUsd } from "../../../../../../lib/priceCache";
 import { checkRateLimit } from "../../../../../../lib/rateLimit";
 import { getSafeErrorMessage } from "../../../../../../lib/safeError";
 
@@ -54,7 +54,7 @@ export async function POST(req: Request, ctx: { params: { id: string; milestoneI
   const body = (await req.json().catch(() => null)) as any;
 
   try {
-    const rl = checkRateLimit(req, { keyPrefix: "milestone:signal", limit: 20, windowSeconds: 60 });
+    const rl = await checkRateLimit(req, { keyPrefix: "milestone:signal", limit: 20, windowSeconds: 60 });
     if (!rl.allowed) {
       const res = NextResponse.json({ error: "Rate limit exceeded" }, { status: 429 });
       res.headers.set("retry-after", String(rl.retryAfterSeconds));
@@ -125,6 +125,8 @@ export async function POST(req: Request, ctx: { params: { id: string; milestoneI
     let projectUiAmount = 0;
     let shipUiAmount = 0;
     let shipMultiplierBps = 10000;
+    let projectPriceUsd = 0;
+    let projectValueUsd = 0;
 
     if (record.tokenMint) {
       const mintPk = new PublicKey(record.tokenMint);
@@ -148,10 +150,16 @@ export async function POST(req: Request, ctx: { params: { id: string; milestoneI
       }
 
       if (priceUsd == null) {
+        priceUsd = await getCachedJupiterPriceUsdAllowStale(mintB58);
+      }
+
+      if (priceUsd == null) {
         return NextResponse.json({ error: "Unable to fetch token USD price for voting" }, { status: 503 });
       }
 
       const valueUsd = bal.uiAmount * priceUsd;
+      projectPriceUsd = priceUsd;
+      projectValueUsd = valueUsd;
       if (!Number.isFinite(valueUsd) || valueUsd <= minUsd) {
         return NextResponse.json(
           {
@@ -184,6 +192,8 @@ export async function POST(req: Request, ctx: { params: { id: string; milestoneI
       milestoneId,
       signerPubkey: signerPk.toBase58(),
       createdAtUnix: nowUnix,
+      projectPriceUsd,
+      projectValueUsd,
     });
 
     if (withinCutoff && record.tokenMint) {
@@ -194,6 +204,8 @@ export async function POST(req: Request, ctx: { params: { id: string; milestoneI
         createdAtUnix: nowUnix,
         projectMint: record.tokenMint,
         projectUiAmount,
+        projectPriceUsd,
+        projectValueUsd,
         shipUiAmount,
         shipMultiplierBps,
       });

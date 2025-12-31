@@ -167,7 +167,7 @@ function pushRewardMilestoneEvents(input: { record: CommitmentRecord; events: Ti
 
 export async function GET(req: Request) {
   try {
-    const rl = checkRateLimit(req, { keyPrefix: "timeline:get", limit: 120, windowSeconds: 60 });
+    const rl = await checkRateLimit(req, { keyPrefix: "timeline:get", limit: 120, windowSeconds: 60 });
     if (!rl.allowed) {
       const res = NextResponse.json({ error: "Rate limit exceeded" }, { status: 429 });
       res.headers.set("retry-after", String(rl.retryAfterSeconds));

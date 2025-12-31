@@ -1,3 +1,5 @@
+import { getPool, hasDatabase } from "./db";
+
 type RateLimitConfig = {
   keyPrefix: string;
   limit: number;
@@ -42,19 +44,48 @@ function getStore(): Map<string, RateLimitEntry> {
   return g.__cts_rate_limit_store as Map<string, RateLimitEntry>;
 }
 
-export function checkRateLimit(
+export async function checkRateLimit(
   req: Request,
   cfg: RateLimitConfig
-): { allowed: true } | { allowed: false; retryAfterSeconds: number } {
+): Promise<{ allowed: true } | { allowed: false; retryAfterSeconds: number }> {
   const ip = getClientIp(req);
   const key = `${cfg.keyPrefix}:${ip}`;
 
   const t = nowUnix();
+  const windowSeconds = Math.max(1, cfg.windowSeconds);
+
+  if (hasDatabase()) {
+    try {
+      const windowStartUnix = Math.floor(t / windowSeconds) * windowSeconds;
+      const resetAtUnix = windowStartUnix + windowSeconds;
+
+      const pool = getPool();
+      const { rows } = await pool.query(
+        "insert into public.rate_limits (key, window_start_unix, count, reset_at_unix, updated_at_unix) values ($1, $2, 1, $3, $4) on conflict (key, window_start_unix) do update set count = public.rate_limits.count + 1, updated_at_unix = excluded.updated_at_unix returning count, reset_at_unix",
+        [key, windowStartUnix, resetAtUnix, t]
+      );
+
+      const count = Number(rows?.[0]?.count ?? 0);
+      const reset = Number(rows?.[0]?.reset_at_unix ?? resetAtUnix);
+
+      if (count > cfg.limit) {
+        return { allowed: false, retryAfterSeconds: Math.max(1, reset - t) };
+      }
+
+      return { allowed: true };
+    } catch (e) {
+      console.error("Rate limit DB error", e);
+      if (process.env.NODE_ENV === "production") {
+        return { allowed: false, retryAfterSeconds: 1 };
+      }
+    }
+  }
+
   const store = getStore();
 
   const existing = store.get(key);
   if (!existing || existing.resetAtUnix <= t) {
-    store.set(key, { count: 1, resetAtUnix: t + Math.max(1, cfg.windowSeconds) });
+    store.set(key, { count: 1, resetAtUnix: t + windowSeconds });
     return { allowed: true };
   }
 

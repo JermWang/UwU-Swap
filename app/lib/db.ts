@@ -4,16 +4,34 @@ import { getSafeErrorMessage } from "./safeError";
 
 let pool: Pool | null = null;
 
+function intEnv(name: string, fallback: number): number {
+  const raw = Number(process.env[name] ?? "");
+  if (Number.isFinite(raw) && raw > 0) return Math.floor(raw);
+  return fallback;
+}
+
 function isMockMode(): boolean {
   const raw = String(process.env.CTS_MOCK_MODE ?? "").trim().toLowerCase();
   return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
 }
 
+function enforceProductionDbGuards(): void {
+  if (process.env.NODE_ENV !== "production") return;
+  if (isMockMode()) {
+    throw new Error("CTS_MOCK_MODE is not allowed in production");
+  }
+  if (!String(process.env.DATABASE_URL ?? "").trim()) {
+    throw new Error("DATABASE_URL is required in production");
+  }
+}
+
 export function hasDatabase(): boolean {
+  enforceProductionDbGuards();
   return Boolean(process.env.DATABASE_URL) && !isMockMode();
 }
 
 export function getPool(): Pool {
+  enforceProductionDbGuards();
   if (!process.env.DATABASE_URL) {
     throw new Error("DATABASE_URL is required");
   }
@@ -43,12 +61,17 @@ export function getPool(): Pool {
   }
 
   if (!pool) {
+    const defaultMax = process.env.NODE_ENV === "production" ? 3 : 5;
+    const max = intEnv("PG_POOL_MAX", defaultMax);
+    const connectionTimeoutMillis = intEnv("PG_POOL_CONNECTION_TIMEOUT_MS", 10_000);
+    const idleTimeoutMillis = intEnv("PG_POOL_IDLE_TIMEOUT_MS", 10_000);
+
     pool = new Pool({
       connectionString: raw,
       ssl: { rejectUnauthorized: false },
-      max: 1,
-      connectionTimeoutMillis: 10_000,
-      idleTimeoutMillis: 10_000,
+      max,
+      connectionTimeoutMillis,
+      idleTimeoutMillis,
       allowExitOnIdle: true,
     });
 

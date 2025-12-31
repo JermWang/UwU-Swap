@@ -56,7 +56,7 @@ export type CommitmentRecord = {
 
 export type RewardMilestoneApprovalCounts = Record<string, number>;
 
-type InMemoryRewardSignals = Map<string, Map<string, Set<string>>>;
+type InMemoryRewardSignals = Map<string, Map<string, Map<string, number>>>;
 
 export type RewardVoterSnapshot = {
   commitmentId: string;
@@ -65,6 +65,8 @@ export type RewardVoterSnapshot = {
   createdAtUnix: number;
   projectMint: string;
   projectUiAmount: number;
+  projectPriceUsd?: number;
+  projectValueUsd?: number;
   shipUiAmount: number;
   shipMultiplierBps: number;
 };
@@ -100,7 +102,7 @@ export type FailureDistributionClaim = {
 
 const mem = {
   commitments: new Map<string, CommitmentRecord>(),
-  rewardSignals: new Map<string, Map<string, Set<string>>>() as InMemoryRewardSignals,
+  rewardSignals: new Map<string, Map<string, Map<string, number>>>() as InMemoryRewardSignals,
   rewardVoterSnapshots: new Map<string, Map<string, Map<string, RewardVoterSnapshot>>>(),
   failureDistributionsByCommitmentId: new Map<string, FailureDistributionRecord>(),
   failureAllocationsByDistributionId: new Map<string, Map<string, FailureDistributionAllocation>>(),
@@ -397,14 +399,16 @@ function ensureMockSeeded(): void {
       byMilestone = new Map();
       mem.rewardSignals.set(commitmentId, byMilestone);
     }
-    let signers = byMilestone.get(milestoneId);
-    if (!signers) {
-      signers = new Set();
-      byMilestone.set(milestoneId, signers);
+    let bySigner = byMilestone.get(milestoneId);
+    if (!bySigner) {
+      bySigner = new Map();
+      byMilestone.set(milestoneId, bySigner);
     }
-    while (signers.size < count) {
-      const idx = signers.size + 1;
-      signers.add(makeKeypair(`signal:${commitmentId}:${milestoneId}:${idx}`).publicKey.toBase58());
+    const minUsd = 20;
+    while (bySigner.size < count) {
+      const idx = bySigner.size + 1;
+      const pk = makeKeypair(`signal:${commitmentId}:${milestoneId}:${idx}`).publicKey.toBase58();
+      bySigner.set(pk, minUsd);
     }
   };
 
@@ -450,13 +454,20 @@ function encryptSecret(plainB58: string): string {
 }
 
 function decryptSecret(stored: string): string {
-  if (!stored.startsWith("enc:")) return stored;
+  const trimmed = String(stored ?? "").trim();
+  if (trimmed.startsWith("privy:")) return trimmed;
+  if (!trimmed.startsWith("enc:")) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("Escrow secret is not encrypted (missing enc: prefix)");
+    }
+    return trimmed;
+  }
 
   const secret = process.env.ESCROW_DB_SECRET;
   if (!secret) throw new Error("ESCROW_DB_SECRET is required to decrypt escrow secrets");
 
   const key = sha256Bytes(secret);
-  const packed = Buffer.from(stored.slice("enc:".length), "base64");
+  const packed = Buffer.from(trimmed.slice("enc:".length), "base64");
   const nonce = new Uint8Array(packed.subarray(0, nacl.secretbox.nonceLength));
   const box = new Uint8Array(packed.subarray(nacl.secretbox.nonceLength));
   const opened = nacl.secretbox.open(box, nonce, key);
@@ -509,11 +520,16 @@ async function ensureSchema(): Promise<void> {
       milestone_id text not null,
       signer_pubkey text not null,
       created_at_unix bigint not null,
+      project_price_usd double precision not null default 0,
+      project_value_usd double precision not null default 0,
       primary key (commitment_id, milestone_id, signer_pubkey)
     );
     create index if not exists reward_milestone_signals_commitment_idx on reward_milestone_signals(commitment_id);
     create index if not exists reward_milestone_signals_milestone_idx on reward_milestone_signals(commitment_id, milestone_id);
   `);
+
+  await pool.query(`alter table reward_milestone_signals add column if not exists project_price_usd double precision not null default 0;`);
+  await pool.query(`alter table reward_milestone_signals add column if not exists project_value_usd double precision not null default 0;`);
 
   await pool.query(`
     create table if not exists reward_voter_snapshots (
@@ -523,12 +539,17 @@ async function ensureSchema(): Promise<void> {
       created_at_unix bigint not null,
       project_mint text not null,
       project_ui_amount double precision not null,
+      project_price_usd double precision not null default 0,
+      project_value_usd double precision not null default 0,
       ship_ui_amount double precision not null default 0,
       ship_multiplier_bps integer not null default 10000,
       primary key (commitment_id, milestone_id, signer_pubkey)
     );
     create index if not exists reward_voter_snapshots_commitment_idx on reward_voter_snapshots(commitment_id);
   `);
+
+  await pool.query(`alter table reward_voter_snapshots add column if not exists project_price_usd double precision not null default 0;`);
+  await pool.query(`alter table reward_voter_snapshots add column if not exists project_value_usd double precision not null default 0;`);
 
   await pool.query(`
     create table if not exists failure_distributions (
@@ -753,6 +774,8 @@ export async function upsertRewardMilestoneSignal(input: {
   milestoneId: string;
   signerPubkey: string;
   createdAtUnix: number;
+  projectPriceUsd: number;
+  projectValueUsd: number;
 }): Promise<{ inserted: boolean }> {
   await ensureSchema();
 
@@ -764,23 +787,34 @@ export async function upsertRewardMilestoneSignal(input: {
       byMilestone = new Map();
       mem.rewardSignals.set(input.commitmentId, byMilestone);
     }
-    let signers = byMilestone.get(input.milestoneId);
-    if (!signers) {
-      signers = new Set();
-      byMilestone.set(input.milestoneId, signers);
+    let bySigner = byMilestone.get(input.milestoneId);
+    if (!bySigner) {
+      bySigner = new Map();
+      byMilestone.set(input.milestoneId, bySigner);
     }
-    const before = signers.size;
-    signers.add(input.signerPubkey);
-    return { inserted: signers.size !== before };
+    const before = bySigner.size;
+    if (!bySigner.has(input.signerPubkey)) {
+      const weight = Number(input.projectValueUsd);
+      const minUsd = 20;
+      bySigner.set(input.signerPubkey, Number.isFinite(weight) && weight > 0 ? weight : minUsd);
+    }
+    return { inserted: bySigner.size !== before };
   }
 
   const pool = getPool();
   const res = await pool.query(
-    `insert into reward_milestone_signals (commitment_id, milestone_id, signer_pubkey, created_at_unix)
-     values ($1,$2,$3,$4)
+    `insert into reward_milestone_signals (commitment_id, milestone_id, signer_pubkey, created_at_unix, project_price_usd, project_value_usd)
+     values ($1,$2,$3,$4,$5,$6)
      on conflict (commitment_id, milestone_id, signer_pubkey) do nothing
      returning commitment_id`,
-    [input.commitmentId, input.milestoneId, input.signerPubkey, String(input.createdAtUnix)]
+    [
+      input.commitmentId,
+      input.milestoneId,
+      input.signerPubkey,
+      String(input.createdAtUnix),
+      Number(input.projectPriceUsd ?? 0),
+      Number(input.projectValueUsd ?? 0),
+    ]
   );
   return { inserted: Boolean(res.rows[0]) };
 }
@@ -812,8 +846,8 @@ export async function upsertRewardVoterSnapshot(input: RewardVoterSnapshot): Pro
   const res = await pool.query(
     `insert into reward_voter_snapshots (
       commitment_id, milestone_id, signer_pubkey, created_at_unix,
-      project_mint, project_ui_amount, ship_ui_amount, ship_multiplier_bps
-    ) values ($1,$2,$3,$4,$5,$6,$7,$8)
+      project_mint, project_ui_amount, project_price_usd, project_value_usd, ship_ui_amount, ship_multiplier_bps
+    ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
     on conflict (commitment_id, milestone_id, signer_pubkey) do nothing
     returning commitment_id`,
     [
@@ -823,6 +857,8 @@ export async function upsertRewardVoterSnapshot(input: RewardVoterSnapshot): Pro
       String(input.createdAtUnix),
       input.projectMint,
       input.projectUiAmount,
+      Number(input.projectPriceUsd ?? 0),
+      Number(input.projectValueUsd ?? 0),
       input.shipUiAmount,
       Math.floor(input.shipMultiplierBps),
     ]
@@ -846,7 +882,7 @@ export async function listRewardVoterSnapshots(commitmentId: string): Promise<Re
 
   const pool = getPool();
   const res = await pool.query(
-    `select commitment_id, milestone_id, signer_pubkey, created_at_unix, project_mint, project_ui_amount, ship_ui_amount, ship_multiplier_bps
+    `select commitment_id, milestone_id, signer_pubkey, created_at_unix, project_mint, project_ui_amount, project_price_usd, project_value_usd, ship_ui_amount, ship_multiplier_bps
      from reward_voter_snapshots where commitment_id=$1`,
     [commitmentId]
   );
@@ -858,6 +894,8 @@ export async function listRewardVoterSnapshots(commitmentId: string): Promise<Re
     createdAtUnix: Number(r.created_at_unix),
     projectMint: String(r.project_mint),
     projectUiAmount: Number(r.project_ui_amount),
+    projectPriceUsd: r.project_price_usd == null ? undefined : Number(r.project_price_usd),
+    projectValueUsd: r.project_value_usd == null ? undefined : Number(r.project_value_usd),
     shipUiAmount: Number(r.ship_ui_amount),
     shipMultiplierBps: Number(r.ship_multiplier_bps),
   }));
@@ -872,15 +910,16 @@ export async function getRewardMilestoneApprovalCounts(commitmentId: string): Pr
     const out: RewardMilestoneApprovalCounts = {};
     const byMilestone = mem.rewardSignals.get(commitmentId);
     if (!byMilestone) return out;
-    for (const [milestoneId, signers] of byMilestone.entries()) {
-      out[milestoneId] = signers.size;
+    for (const [milestoneId, bySigner] of byMilestone.entries()) {
+      const total = Array.from(bySigner.values()).reduce((acc, v) => acc + (Number.isFinite(v) ? v : 0), 0);
+      out[milestoneId] = total;
     }
     return out;
   }
 
   const pool = getPool();
   const res = await pool.query(
-    "select milestone_id, count(*)::int as c from reward_milestone_signals where commitment_id=$1 group by milestone_id",
+    "select milestone_id, sum(case when project_value_usd > 0 then project_value_usd else 20 end)::float8 as c from reward_milestone_signals where commitment_id=$1 group by milestone_id",
     [commitmentId]
   );
   const out: RewardMilestoneApprovalCounts = {};
@@ -891,9 +930,13 @@ export async function getRewardMilestoneApprovalCounts(commitmentId: string): Pr
 }
 
 export function getRewardApprovalThreshold(): number {
+  const explicitUsd = Number(process.env.REWARD_APPROVAL_THRESHOLD_USD ?? "");
+  if (Number.isFinite(explicitUsd) && explicitUsd > 0) return explicitUsd;
+
   const raw = Number(process.env.REWARD_APPROVAL_THRESHOLD ?? "");
-  if (Number.isFinite(raw) && raw > 0) return Math.floor(raw);
-  return 3;
+  const count = Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 3;
+  const minUsd = 20;
+  return count * minUsd;
 }
 
 export function normalizeRewardMilestonesClaimable(input: {

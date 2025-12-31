@@ -18,7 +18,7 @@ export const runtime = "nodejs";
 
 export async function POST(req: Request) {
   try {
-    const rl = checkRateLimit(req, { keyPrefix: "admin:login", limit: 20, windowSeconds: 60 });
+    const rl = await checkRateLimit(req, { keyPrefix: "admin:login", limit: 20, windowSeconds: 60 });
     if (!rl.allowed) {
       const res = NextResponse.json({ error: "Rate limit exceeded" }, { status: 429 });
       res.headers.set("retry-after", String(rl.retryAfterSeconds));

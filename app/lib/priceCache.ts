@@ -20,6 +20,12 @@ function ttlSeconds(): number {
   return 60;
 }
 
+function staleTtlSeconds(): number {
+  const raw = Number(process.env.JUPITER_PRICE_STALE_TTL_SECONDS ?? "");
+  if (Number.isFinite(raw) && raw > 0) return Math.floor(raw);
+  return 15 * 60;
+}
+
 async function ensureSchema(): Promise<void> {
   if (!hasDatabase()) return;
   const pool = getPool();
@@ -53,6 +59,30 @@ export async function getCachedJupiterPriceUsd(mint: string): Promise<number | n
   const priceUsd = Number(row.price_usd);
   if (!Number.isFinite(updatedAtUnix) || !Number.isFinite(priceUsd)) return null;
   if (t - updatedAtUnix > ttl) return null;
+  return priceUsd;
+}
+
+export async function getCachedJupiterPriceUsdAllowStale(mint: string): Promise<number | null> {
+  await ensureSchema();
+
+  const t = nowUnix();
+  const maxAge = staleTtlSeconds();
+
+  if (!hasDatabase()) {
+    const row = mem.prices.get(mint);
+    if (!row) return null;
+    if (t - row.updatedAtUnix > maxAge) return null;
+    return row.priceUsd;
+  }
+
+  const pool = getPool();
+  const res = await pool.query("select price_usd, updated_at_unix from token_price_cache where mint=$1", [mint]);
+  const row = res.rows[0];
+  if (!row) return null;
+  const updatedAtUnix = Number(row.updated_at_unix);
+  const priceUsd = Number(row.price_usd);
+  if (!Number.isFinite(updatedAtUnix) || !Number.isFinite(priceUsd)) return null;
+  if (t - updatedAtUnix > maxAge) return null;
   return priceUsd;
 }
 

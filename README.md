@@ -26,6 +26,10 @@ Important safety model (intentional):
 
 - `app` (Next.js app + API routes)
 
+## Operations
+
+- See `RUNBOOK.md`
+
 ## Prerequisites
 
 - Node.js 18+ and npm

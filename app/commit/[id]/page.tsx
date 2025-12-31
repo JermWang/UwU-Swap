@@ -211,6 +211,7 @@ export default async function CommitDashboardPage({ params }: { params: { id: st
             <CommitDashboardClient
               id={updated.id}
               kind={updated.kind}
+              amountLamports={0}
               escrowPubkey={updated.escrowPubkey}
               destinationOnFail={updated.destinationOnFail}
               authority={updated.authority}

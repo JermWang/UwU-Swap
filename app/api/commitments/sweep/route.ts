@@ -21,7 +21,7 @@ export const runtime = "nodejs";
 
 export async function POST(req: Request) {
   try {
-    const rl = checkRateLimit(req, { keyPrefix: "commitments:sweep", limit: 10, windowSeconds: 60 });
+    const rl = await checkRateLimit(req, { keyPrefix: "commitments:sweep", limit: 10, windowSeconds: 60 });
     if (!rl.allowed) {
       const res = NextResponse.json({ error: "Rate limit exceeded" }, { status: 429 });
       res.headers.set("retry-after", String(rl.retryAfterSeconds));
@@ -30,7 +30,7 @@ export async function POST(req: Request) {
 
     verifyAdminOrigin(req);
     if (!(await isAdminRequestAsync(req))) {
-      auditLog("admin_sweep_denied", {});
+      await auditLog("admin_sweep_denied", {});
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -92,10 +92,10 @@ export async function POST(req: Request) {
       }
     }
 
-    auditLog("admin_sweep_completed", { nowUnix, resultsCount: results.length });
+    await auditLog("admin_sweep_completed", { nowUnix, resultsCount: results.length });
     return NextResponse.json({ nowUnix, results });
   } catch (e) {
-    auditLog("admin_sweep_error", { error: getSafeErrorMessage(e) });
+    await auditLog("admin_sweep_error", { error: getSafeErrorMessage(e) });
     return NextResponse.json({ error: getSafeErrorMessage(e) }, { status: 500 });
   }
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { Transaction } from "@solana/web3.js";
+import { Connection, PublicKey, SystemProgram, Transaction, clusterApiUrl } from "@solana/web3.js";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import bs58 from "bs58";
 import styles from "./CommitDashboard.module.css";
@@ -30,6 +30,7 @@ type RewardMilestoneApprovalCounts = Record<string, number>;
 type Props = {
   id: string;
   kind: "personal" | "creator_reward";
+  amountLamports: number;
   escrowPubkey: string;
   destinationOnFail: string;
   authority: string;
@@ -109,6 +110,12 @@ function fmtSol(lamports: number): string {
   return new Intl.NumberFormat("en-US", { maximumFractionDigits: 6 }).format(sol);
 }
 
+function fmtUsd(value: number): string {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return "0";
+  return new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(n);
+}
+
 function clamp01(n: number): number {
   if (n < 0) return 0;
   if (n > 1) return 1;
@@ -152,7 +159,7 @@ export default function CommitDashboardClient(props: Props) {
 
   const [creatorBusy, setCreatorBusy] = useState<string | null>(null);
   const [creatorError, setCreatorError] = useState<string | null>(null);
-  const [signatureInput, setSignatureInput] = useState<Record<string, string>>({});
+  const [creatorWalletPubkey, setCreatorWalletPubkey] = useState<string | null>(null);
 
   const [signalSignerPubkey, setSignalSignerPubkey] = useState("");
   const [signalBusy, setSignalBusy] = useState<string | null>(null);
@@ -165,6 +172,11 @@ export default function CommitDashboardClient(props: Props) {
   const [failureClaimBusy, setFailureClaimBusy] = useState<string | null>(null);
   const [failureClaimError, setFailureClaimError] = useState<string | null>(null);
   const [failureClaimResult, setFailureClaimResult] = useState<any>(null);
+
+  const [fundWalletPubkey, setFundWalletPubkey] = useState<string | null>(null);
+  const [fundBusy, setFundBusy] = useState<string | null>(null);
+  const [fundError, setFundError] = useState<string | null>(null);
+  const [fundSignature, setFundSignature] = useState<string | null>(null);
 
   const canAdminAct = useMemo(() => Boolean(adminWalletPubkey) && adminBusy == null, [adminWalletPubkey, adminBusy]);
 
@@ -181,12 +193,44 @@ export default function CommitDashboardClient(props: Props) {
     }
   }
 
-  async function markMilestoneComplete(milestoneId: string) {
+  async function connectCreatorWallet() {
+    setCreatorError(null);
+    setCreatorBusy("connect");
+    try {
+      const provider = getSolanaProvider();
+      if (!provider?.connect) throw new Error("Wallet provider not found");
+      const res = await provider.connect();
+      const pk = (res?.publicKey ?? provider.publicKey)?.toBase58?.();
+      if (!pk) throw new Error("Failed to read wallet public key");
+      setCreatorWalletPubkey(pk);
+    } catch (e) {
+      setCreatorError((e as Error).message);
+    } finally {
+      setCreatorBusy(null);
+    }
+  }
+
+  async function signAndCompleteMilestone(milestoneId: string) {
     setCreatorError(null);
     setCreatorBusy(`complete:${milestoneId}`);
     try {
+      const provider = getSolanaProvider();
+      if (!provider?.publicKey) throw new Error("Connect wallet first");
+      if (!provider.signMessage) throw new Error("Wallet does not support message signing");
+
+      const signerPubkey = provider.publicKey.toBase58();
+      setCreatorWalletPubkey(signerPubkey);
+
+      const expectedCreator = String(props.creatorPubkey ?? "").trim();
+      if (expectedCreator && signerPubkey !== expectedCreator) {
+        throw new Error("Connected wallet must match creator wallet to complete milestones");
+      }
+
       const message = completionMessage(id, milestoneId);
-      const signature = (signatureInput[milestoneId] ?? "").trim();
+      const signed = await provider.signMessage(new TextEncoder().encode(message), "utf8");
+      const signatureBytes: Uint8Array = signed?.signature ?? signed;
+      const signature = bs58.encode(signatureBytes);
+
       await jsonPost(`/api/commitments/${id}/milestones/${milestoneId}/complete`, { message, signature });
       window.location.reload();
     } catch (e) {
@@ -198,6 +242,100 @@ export default function CommitDashboardClient(props: Props) {
 
   function getSolanaProvider(): any {
     return (window as any)?.solana;
+  }
+
+  function getClientRpcEndpoint(): string {
+    const explicit = String(process.env.NEXT_PUBLIC_SOLANA_RPC_URL ?? "").trim();
+    if (explicit) return explicit;
+
+    const cluster = String(process.env.NEXT_PUBLIC_SOLANA_CLUSTER ?? "mainnet-beta").trim();
+    if (cluster === "devnet" || cluster === "testnet" || cluster === "mainnet-beta") {
+      return clusterApiUrl(cluster);
+    }
+    return clusterApiUrl("mainnet-beta");
+  }
+
+  async function connectFundingWallet() {
+    setFundError(null);
+    setFundBusy("connect");
+    try {
+      const provider = getSolanaProvider();
+      if (!provider?.connect) throw new Error("Wallet provider not found");
+      const res = await provider.connect();
+      const pk = (res?.publicKey ?? provider.publicKey)?.toBase58?.();
+      if (!pk) throw new Error("Failed to read wallet public key");
+      setFundWalletPubkey(pk);
+    } catch (e) {
+      setFundError((e as Error).message);
+    } finally {
+      setFundBusy(null);
+    }
+  }
+
+  async function fundEscrow() {
+    setFundError(null);
+    setFundSignature(null);
+    setFundBusy("fund");
+    try {
+      const requiredLamports = Number(props.amountLamports ?? 0);
+      const currentLamports = Number(props.balanceLamports ?? 0);
+      const remainingLamports = Math.max(0, requiredLamports - currentLamports);
+      if (!Number.isFinite(requiredLamports) || requiredLamports <= 0) throw new Error("Invalid required amount");
+      if (!Number.isFinite(currentLamports) || currentLamports < 0) throw new Error("Invalid escrow balance");
+      if (remainingLamports <= 0) throw new Error("Escrow is already funded");
+
+      const provider = getSolanaProvider();
+      if (!provider?.publicKey) {
+        if (!provider?.connect) throw new Error("Wallet provider not found");
+        await provider.connect();
+      }
+      if (!provider?.publicKey?.toBase58) throw new Error("Failed to read wallet public key");
+
+      const from = new PublicKey(provider.publicKey.toBase58());
+      setFundWalletPubkey(from.toBase58());
+
+      const to = new PublicKey(String(escrowPubkey));
+
+      const connection = new Connection(getClientRpcEndpoint(), "confirmed");
+      const latest = await connection.getLatestBlockhash("processed");
+
+      const tx = new Transaction();
+      tx.recentBlockhash = latest.blockhash;
+      tx.lastValidBlockHeight = latest.lastValidBlockHeight;
+      tx.feePayer = from;
+      tx.add(
+        SystemProgram.transfer({
+          fromPubkey: from,
+          toPubkey: to,
+          lamports: remainingLamports,
+        })
+      );
+
+      let signature: string;
+
+      if (provider.signAndSendTransaction) {
+        const sent = await provider.signAndSendTransaction(tx);
+        signature = String(sent?.signature ?? sent);
+      } else if (provider.signTransaction) {
+        const signedTx = await provider.signTransaction(tx);
+        const raw = signedTx.serialize();
+        signature = await connection.sendRawTransaction(raw, { skipPreflight: false });
+      } else {
+        throw new Error("Wallet does not support sending transactions");
+      }
+
+      await connection.confirmTransaction(
+        { signature, blockhash: latest.blockhash, lastValidBlockHeight: latest.lastValidBlockHeight },
+        "confirmed"
+      );
+
+      setFundSignature(signature);
+      window.location.reload();
+    } catch (e) {
+      setFundError((e as Error).message);
+    } finally {
+      setFundBusy(null);
+    }
   }
 
   useEffect(() => {
@@ -527,11 +665,74 @@ export default function CommitDashboardClient(props: Props) {
   return (
     <div className={styles.lower}>
       <div className={styles.primaryFlow}>
+        {kind === "personal" ? (
+          <div className={styles.primarySection}>
+            <div className={styles.primaryTitle}>Funding</div>
+            <div className={styles.smallNote} style={{ marginTop: 10 }}>
+              This sends SOL from your wallet to the escrow address. It will send exactly the remaining amount required to fully fund the commitment.
+            </div>
+            <div className={styles.smallNote} style={{ marginTop: 8 }}>
+              Custody notice: escrow funds are controlled by this service. An admin wallet can mark success/failure and trigger on-chain transfers.
+            </div>
+
+            {(() => {
+              const requiredLamports = Number(props.amountLamports ?? 0);
+              const balanceLamports = Number(props.balanceLamports ?? 0);
+              const remainingLamports = Math.max(0, requiredLamports - balanceLamports);
+              const funded = requiredLamports > 0 && balanceLamports >= requiredLamports;
+              return (
+                <div style={{ marginTop: 12 }}>
+                  <div className={styles.smallNote}>
+                    Required {fmtSol(requiredLamports)} SOL. Escrow balance {fmtSol(balanceLamports)} SOL.
+                  </div>
+                  {!funded ? (
+                    <div className={styles.smallNote} style={{ marginTop: 6 }}>
+                      Remaining {fmtSol(remainingLamports)} SOL.
+                    </div>
+                  ) : (
+                    <div className={styles.smallNote} style={{ marginTop: 6 }}>
+                      Escrow is funded.
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+            {fundError ? (
+              <div className={styles.smallNote} style={{ color: "rgba(180, 40, 60, 0.86)", marginTop: 10 }}>
+                {fundError}
+              </div>
+            ) : null}
+
+            {fundSignature ? (
+              <div className={styles.smallNote} style={{ marginTop: 10 }}>
+                Funding sent: {fundSignature}
+              </div>
+            ) : null}
+
+            <div className={styles.actions} style={{ marginTop: 12, justifyContent: "flex-start" }}>
+              <button className={styles.actionBtn} onClick={connectFundingWallet} disabled={fundBusy != null}>
+                {fundWalletPubkey ? "Wallet Connected" : fundBusy === "connect" ? "Connecting…" : "Connect Wallet"}
+              </button>
+              <button
+                className={`${styles.actionBtn} ${styles.actionPrimary}`}
+                onClick={fundEscrow}
+                disabled={fundBusy != null}
+              >
+                {fundBusy === "fund" ? "Sending…" : "Fund Escrow"}
+              </button>
+            </div>
+          </div>
+        ) : null}
+
         {kind === "creator_reward" ? (
           <div className={styles.primarySection}>
             <div className={styles.primaryTitle}>Milestones</div>
             <div className={styles.smallNote} style={{ marginTop: 10 }}>
               Creator completes milestones. Token holders signal approval. After the delay and threshold, milestones become claimable. Admin releases funds via an explicit on-chain transfer.
+            </div>
+            <div className={styles.smallNote} style={{ marginTop: 8 }}>
+              Votes do not move funds. Admin release is required. Escrow can be underfunded, and releases will fail if escrow balance is insufficient.
             </div>
 
             {props.status === "failed" ? (
@@ -636,7 +837,7 @@ export default function CommitDashboardClient(props: Props) {
                           </div>
                           {showApprovals && m.completedAtUnix != null ? (
                             <div className={styles.smallNote} style={{ marginTop: 6 }}>
-                              Approvals {approvals}/{threshold}
+                              Approval weight ${fmtUsd(approvals)} / ${fmtUsd(threshold)}
                             </div>
                           ) : null}
                         </div>
@@ -650,22 +851,23 @@ export default function CommitDashboardClient(props: Props) {
                       {canComplete ? (
                         <div className={styles.milestoneAction}>
                           <div className={styles.smallNote}>
-                            Sign this message with your creator wallet ({props.creatorPubkey ?? "creator"}), then paste the base58 signature.
+                            Marking complete requires signing with the creator wallet ({props.creatorPubkey ?? "creator"}).
                           </div>
                           <div className={styles.milestoneSmallMono}>{msg}</div>
                           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 10 }}>
-                            <input
-                              className={styles.adminInput}
-                              value={signatureInput[m.id] ?? ""}
-                              onChange={(e) => setSignatureInput((prev) => ({ ...prev, [m.id]: e.target.value }))}
-                              placeholder="Signature (base58)"
-                            />
                             <button
                               className={`${styles.actionBtn} ${styles.actionPrimary}`}
-                              onClick={() => markMilestoneComplete(m.id)}
+                              onClick={connectCreatorWallet}
                               disabled={creatorBusy != null}
                             >
-                              {creatorBusy === `complete:${m.id}` ? "Submitting…" : "Mark Complete"}
+                              {creatorBusy === "connect" ? "Connecting…" : creatorWalletPubkey ? "Wallet Connected" : "Connect Wallet"}
+                            </button>
+                            <button
+                              className={`${styles.actionBtn} ${styles.actionPrimary}`}
+                              onClick={() => signAndCompleteMilestone(m.id)}
+                              disabled={creatorBusy != null || !creatorWalletPubkey}
+                            >
+                              {creatorBusy === `complete:${m.id}` ? "Submitting…" : "Sign & Mark Complete"}
                             </button>
                           </div>
                         </div>

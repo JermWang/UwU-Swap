@@ -9,6 +9,17 @@ type TocItem = {
   number: string;
 };
 
+function alphaIndex(n: number): string {
+  let x = Math.max(0, Math.floor(n));
+  let out = "";
+  while (x > 0) {
+    x -= 1;
+    out = String.fromCharCode(97 + (x % 26)) + out;
+    x = Math.floor(x / 26);
+  }
+  return out || "a";
+}
+
 function getText(el: Element): string {
   const clone = el.cloneNode(true) as HTMLElement;
   clone.querySelectorAll(".docHeadingAnchor").forEach((n) => n.remove());
@@ -39,7 +50,7 @@ export default function DocsShell({ children }: { children: React.ReactNode }) {
           h3Index += 1;
         }
 
-        const number = level === 2 ? `${h2Index}.` : `${h2Index}.${h3Index}`;
+        const number = level === 2 ? `${h2Index}` : `${h2Index}${alphaIndex(h3Index)}`;
 
         return {
           id: String(h.getAttribute("id") || ""),

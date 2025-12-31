@@ -29,7 +29,7 @@ function parseBigIntLike(value: unknown): bigint | null {
 
 export async function POST(req: Request) {
   try {
-    const rl = checkRateLimit(req, { keyPrefix: "pumpfun:launch", limit: 10, windowSeconds: 60 });
+    const rl = await checkRateLimit(req, { keyPrefix: "pumpfun:launch", limit: 10, windowSeconds: 60 });
     if (!rl.allowed) {
       const res = NextResponse.json({ error: "Rate limit exceeded" }, { status: 429 });
       res.headers.set("retry-after", String(rl.retryAfterSeconds));
@@ -38,7 +38,7 @@ export async function POST(req: Request) {
 
     verifyAdminOrigin(req);
     if (!(await isAdminRequestAsync(req))) {
-      auditLog("admin_pumpfun_launch_denied", {});
+      await auditLog("admin_pumpfun_launch_denied", {});
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -111,7 +111,7 @@ export async function POST(req: Request) {
 
     const signature = sent.signature;
 
-    auditLog("admin_pumpfun_launch_sent", {
+    await auditLog("admin_pumpfun_launch_sent", {
       signature,
       mint: mintKeypair.publicKey.toBase58(),
       creator: creator.toBase58(),
@@ -139,7 +139,7 @@ export async function POST(req: Request) {
       creator: creator.toBase58(),
     });
   } catch (e) {
-    auditLog("admin_pumpfun_launch_error", { error: getSafeErrorMessage(e) });
+    await auditLog("admin_pumpfun_launch_error", { error: getSafeErrorMessage(e) });
     return NextResponse.json({ error: getSafeErrorMessage(e) }, { status: 500 });
   }
 }

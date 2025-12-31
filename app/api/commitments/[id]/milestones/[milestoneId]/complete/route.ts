@@ -27,7 +27,7 @@ export async function POST(req: Request, ctx: { params: { id: string; milestoneI
   const body = (await req.json().catch(() => null)) as any;
 
   try {
-    const rl = checkRateLimit(req, { keyPrefix: "milestone:complete", limit: 20, windowSeconds: 60 });
+    const rl = await checkRateLimit(req, { keyPrefix: "milestone:complete", limit: 20, windowSeconds: 60 });
     if (!rl.allowed) {
       const res = NextResponse.json({ error: "Rate limit exceeded" }, { status: 429 });
       res.headers.set("retry-after", String(rl.retryAfterSeconds));

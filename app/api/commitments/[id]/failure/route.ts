@@ -32,7 +32,7 @@ export const runtime = "nodejs";
 
 export async function POST(req: Request, ctx: { params: { id: string } }) {
   try {
-    const rl = checkRateLimit(req, { keyPrefix: "commitment:failure", limit: 30, windowSeconds: 60 });
+    const rl = await checkRateLimit(req, { keyPrefix: "commitment:failure", limit: 30, windowSeconds: 60 });
     if (!rl.allowed) {
       const res = NextResponse.json({ error: "Rate limit exceeded" }, { status: 429 });
       res.headers.set("retry-after", String(rl.retryAfterSeconds));
@@ -41,7 +41,7 @@ export async function POST(req: Request, ctx: { params: { id: string } }) {
 
     verifyAdminOrigin(req);
     if (!(await isAdminRequestAsync(req))) {
-      auditLog("admin_commitment_failure_denied", { commitmentId: ctx.params.id });
+      await auditLog("admin_commitment_failure_denied", { commitmentId: ctx.params.id });
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -164,7 +164,7 @@ export async function POST(req: Request, ctx: { params: { id: string } }) {
         resolvedTxSig: buybackTx?.signature ?? voterPotTxSig ?? "none",
       });
 
-      auditLog("admin_commitment_failure_ok", {
+      await auditLog("admin_commitment_failure_ok", {
         commitmentId: id,
         buybackTxSig: buybackTx?.signature ?? null,
         voterPotTxSig: voterPotTxSig ?? null,
@@ -188,12 +188,12 @@ export async function POST(req: Request, ctx: { params: { id: string } }) {
         commitment: publicView(updated),
       });
     } catch (e) {
-      auditLog("admin_commitment_failure_error", { commitmentId: id, error: getSafeErrorMessage(e) });
+      await auditLog("admin_commitment_failure_error", { commitmentId: id, error: getSafeErrorMessage(e) });
       await releaseFailureSettlementClaim({ id, restoreStatus });
       return NextResponse.json({ error: getSafeErrorMessage(e) }, { status: 500 });
     }
   } catch (e) {
-    auditLog("admin_commitment_failure_error", { commitmentId: ctx.params.id, error: getSafeErrorMessage(e) });
+    await auditLog("admin_commitment_failure_error", { commitmentId: ctx.params.id, error: getSafeErrorMessage(e) });
     return NextResponse.json({ error: getSafeErrorMessage(e) }, { status: 500 });
   }
 }

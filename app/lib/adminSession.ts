@@ -47,7 +47,12 @@ export function getAdminCookieName(): string {
 
 export function getAllowedAdminWallets(): Set<string> {
   const raw = String(process.env.ADMIN_WALLET_PUBKEYS ?? "").trim();
-  if (!raw) return new Set();
+  if (!raw) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("ADMIN_WALLET_PUBKEYS is required in production");
+    }
+    return new Set();
+  }
   return new Set(
     raw
       .split(",")

@@ -1125,6 +1125,12 @@ body[data-skin="landing"] .heroMarkImageSvg {
   filter: invert(1);
 }
 
+body[data-skin="landing"] .heroMark,
+body[data-skin="landing"] .heroMarkImage,
+body[data-skin="landing"] .heroMarkImageSvg {
+  pointer-events: none;
+}
+
 body[data-skin="landing"] .heroLead {
   color: rgba(255, 255, 255, 0.74);
   margin: 0;
@@ -1494,16 +1500,18 @@ html[data-skin="app"] .ascii-waves {
 
 .heroLead .pumpfunLink {
   cursor: pointer;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-  text-decoration-thickness: 1px;
-  text-decoration-color: rgba(255, 255, 255, 0.25);
-  transition: text-decoration-color 0.15s ease, opacity 0.15s ease;
+  pointer-events: auto;
+  text-decoration: none;
+  display: inline-block;
+  position: relative;
+  z-index: 10;
+  opacity: 0.96;
+  transition: opacity 0.15s ease, text-shadow 0.15s ease;
 }
 
 .heroLead .pumpfunLink:hover {
-  text-decoration-color: rgba(255, 255, 255, 0.9);
-  opacity: 0.95;
+  opacity: 1;
+  text-shadow: 0 0 14px rgba(255, 255, 255, 0.22);
 }
 
 .heroMark {

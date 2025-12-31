@@ -37,7 +37,7 @@ function computeUnlockedLamports(milestones: RewardMilestone[]): number {
 }
 
 export async function POST(req: Request, ctx: { params: { id: string; milestoneId: string } }) {
-  const rl = checkRateLimit(req, { keyPrefix: "milestone:release", limit: 30, windowSeconds: 60 });
+  const rl = await checkRateLimit(req, { keyPrefix: "milestone:release", limit: 30, windowSeconds: 60 });
   if (!rl.allowed) {
     const res = NextResponse.json({ error: "Rate limit exceeded" }, { status: 429 });
     res.headers.set("retry-after", String(rl.retryAfterSeconds));
@@ -46,7 +46,7 @@ export async function POST(req: Request, ctx: { params: { id: string; milestoneI
 
   verifyAdminOrigin(req);
   if (!(await isAdminRequestAsync(req))) {
-    auditLog("admin_reward_milestone_release_denied", { commitmentId: ctx.params.id, milestoneId: ctx.params.milestoneId });
+    await auditLog("admin_reward_milestone_release_denied", { commitmentId: ctx.params.id, milestoneId: ctx.params.milestoneId });
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -169,7 +169,7 @@ export async function POST(req: Request, ctx: { params: { id: string; milestoneI
         status: allReleased ? "completed" : "active",
       });
 
-      auditLog("admin_reward_milestone_release_ok", { commitmentId: id, milestoneId, signature });
+      await auditLog("admin_reward_milestone_release_ok", { commitmentId: id, milestoneId, signature });
 
       await releaseRewardReleaseLock({ commitmentId: id, milestoneId });
 
@@ -180,12 +180,12 @@ export async function POST(req: Request, ctx: { params: { id: string; milestoneI
         commitment: publicView(updated),
       });
     } catch (e) {
-      auditLog("admin_reward_milestone_release_error", { commitmentId: id, milestoneId, error: getSafeErrorMessage(e) });
+      await auditLog("admin_reward_milestone_release_error", { commitmentId: id, milestoneId, error: getSafeErrorMessage(e) });
       await releaseRewardReleaseLock({ commitmentId: id, milestoneId });
       return NextResponse.json({ error: getSafeErrorMessage(e) }, { status: 500 });
     }
   } catch (e) {
-    auditLog("admin_reward_milestone_release_error", { commitmentId: id, milestoneId, error: getSafeErrorMessage(e) });
+    await auditLog("admin_reward_milestone_release_error", { commitmentId: id, milestoneId, error: getSafeErrorMessage(e) });
     return NextResponse.json({ error: getSafeErrorMessage(e) }, { status: 500 });
   }
 }

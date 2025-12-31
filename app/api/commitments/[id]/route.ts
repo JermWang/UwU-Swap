@@ -26,7 +26,7 @@ function computeUnlockedLamports(milestones: RewardMilestone[]): number {
 
 export async function GET(_req: Request, ctx: { params: { id: string } }) {
   try {
-    const rl = checkRateLimit(_req, { keyPrefix: "commitment:get", limit: 120, windowSeconds: 60 });
+    const rl = await checkRateLimit(_req, { keyPrefix: "commitment:get", limit: 120, windowSeconds: 60 });
     if (!rl.allowed) {
       const res = NextResponse.json({ error: "Rate limit exceeded" }, { status: 429 });
       res.headers.set("retry-after", String(rl.retryAfterSeconds));
