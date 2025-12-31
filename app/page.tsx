@@ -182,7 +182,7 @@ export default function Home() {
   const [draftDescription, setDraftDescription] = useState(
     "Bridge monitor + proof relay with escrowed milestones and on-chain receipts. Built for uptime, clarity, and post-launch accountability."
   );
-  const [draftImageUrl, setDraftImageUrl] = useState("https://images.unsplash.com/photo-1520607162513-77705c0f0d4a?auto=format&fit=crop&w=512&q=80");
+  const [draftImageUrl, setDraftImageUrl] = useState("");
   const [draftBannerUrl, setDraftBannerUrl] = useState("");
   const [draftWebsiteUrl, setDraftWebsiteUrl] = useState("https://atlasbridge.io");
   const [draftXUrl, setDraftXUrl] = useState("https://x.com/atlasbridge");
@@ -1370,50 +1370,8 @@ export default function Home() {
   }
 
   return (
-    <>
-      <div className="appShell" data-skin={tab === "landing" ? "landing" : "app"}>
-        <aside className="appShellNav">
-          <div className="appShellBrand">
-            <img src="/branding/svg-logo.svg" alt="Commit To Ship" className="appShellBrandMark" />
-            <div className="appShellBrandText">Commit To Ship</div>
-          </div>
-
-          <nav className="appShellNavGroup" aria-label="Primary">
-            <button
-              className={`appShellNavItem ${tab === "landing" ? "appShellNavItemActive" : ""}`}
-              onClick={() => setTabAndUrl("landing")}
-              disabled={busy != null}
-            >
-              Landing
-            </button>
-            <button
-              className={`appShellNavItem ${tab === "discover" ? "appShellNavItemActive" : ""}`}
-              onClick={() => {
-                setTabAndUrl("discover");
-                setTimeout(() => timelineRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 40);
-              }}
-              disabled={busy != null}
-            >
-              Discover
-            </button>
-            <button
-              className={`appShellNavItem ${tab === "commit" ? "appShellNavItemActive" : ""}`}
-              onClick={() => {
-                setTabAndUrl("commit");
-                setTimeout(() => commitmentRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
-              }}
-              disabled={busy != null}
-            >
-              Commit
-            </button>
-          </nav>
-
-          <div className="appShellNavFoot">On-chain accountability</div>
-        </aside>
-
-        <div className="appShellMain">
-          <main className="appShellBody">
-            {tab === "landing" ? (
+    <main className="appShellBody">
+      {tab === "landing" ? (
               <div className="commitStage">
                 <div className="commitWrap">
                   <section className="commitSurface commitSurfaceMain landingSurface">
@@ -1514,16 +1472,8 @@ export default function Home() {
                               <button
                                 type="button"
                                 className="commitBtnSecondary commitBtnSmall"
-                                onClick={() => setCommitStep((s) => Math.max(1, s - 1))}
-                                disabled={busy != null || commitStep <= 1}
-                              >
-                                Back
-                              </button>
-                              <button
-                                type="button"
-                                className="commitBtnSecondary commitBtnSmall"
-                                onClick={() => setCommitStep((s) => Math.min(maxCommitStep, s + 1))}
-                                disabled={busy != null || commitStep >= maxCommitStep}
+                                onClick={() => setCommitStep((s) => Math.min(commitSteps.length, s + 1))}
+                                disabled={busy != null || commitStep >= commitSteps.length}
                               >
                                 Next
                               </button>
@@ -1614,7 +1564,7 @@ export default function Home() {
                               <div className="commitField">
                                 <div className="commitFieldLabel">Coin icon</div>
                                 <div className="commitInputWithUnit">
-                                  <input className="commitInput" value={draftImageUrl} onChange={(e) => setDraftImageUrl(e.target.value)} placeholder="https://..." />
+                                  <input className="commitInput" value={draftImageUrl ? "Uploaded" : ""} disabled placeholder="Click upload" />
                                   <label className="commitInputUnit" style={{ cursor: busy != null ? "not-allowed" : "pointer" }}>
                                     Upload
                                     <input
@@ -1645,7 +1595,7 @@ export default function Home() {
                                 <div className="commitField">
                                   <div className="commitFieldLabel">Banner</div>
                                   <div className="commitInputWithUnit">
-                                    <input className="commitInput" value={draftBannerUrl} onChange={(e) => setDraftBannerUrl(e.target.value)} placeholder="https://..." />
+                                    <input className="commitInput" value={draftBannerUrl ? "Uploaded" : ""} disabled placeholder="Click upload" />
                                     <label className="commitInputUnit" style={{ cursor: busy != null ? "not-allowed" : "pointer" }}>
                                       Upload
                                       <input
@@ -2665,9 +2615,6 @@ export default function Home() {
                 </div>
               </div>
             ) : null}
-          </main>
-        </div>
-      </div>
-    </>
+      </main>
   );
 }

@@ -220,8 +220,8 @@ export default function ProfileClient({ wallet }: { wallet: string }) {
   }
 
   return (
-    <div className="stage">
-      <div className="panel" style={{ width: "100%" }}>
+    <main className="appShellBody" style={{ paddingTop: 28, paddingLeft: "var(--layout-gutter)", paddingRight: "var(--layout-gutter)" }}>
+      <div>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           <div>
             <div style={{ fontSize: 12, opacity: 0.7 }}>Profile</div>
@@ -289,6 +289,6 @@ export default function ProfileClient({ wallet }: { wallet: string }) {
           </div>
         </div>
       </div>
-    </div>
+    </main>
   );
 }
