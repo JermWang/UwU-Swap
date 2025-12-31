@@ -1492,6 +1492,20 @@ html[data-skin="app"] .ascii-waves {
   color: #fff;
 }
 
+.heroLead .pumpfunLink {
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-thickness: 1px;
+  text-decoration-color: rgba(255, 255, 255, 0.25);
+  transition: text-decoration-color 0.15s ease, opacity 0.15s ease;
+}
+
+.heroLead .pumpfunLink:hover {
+  text-decoration-color: rgba(255, 255, 255, 0.9);
+  opacity: 0.95;
+}
+
 .heroMark {
   margin-top: 22px;
   margin-bottom: 14px;
