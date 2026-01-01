@@ -118,6 +118,23 @@ Fund release is an explicit, auditable action tied to on-chain transactions and 
 
 The system is intentionally conservative. Clarity and traceability take precedence over automation.
 
+### 6. Failure Distribution
+
+When a creator misses deadlines or fails to deliver on milestones, the escrowed funds are redistributed:
+
+| Allocation | Recipient | Purpose |
+|------------|-----------|---------|
+| **50%** | Token holders who voted | Rewards engaged community members proportionally based on holdings and $SHIP multiplier |
+| **50%** | $SHIP buyback treasury | Fuels protocol sustainability through token buybacks |
+
+This mechanism ensures:
+
+- **Holder protection:** Voters who participated in governance receive compensation
+- **Protocol alignment:** Failed commitments strengthen the $SHIP ecosystem
+- **Accountability enforcement:** Creators face real consequences for non-delivery
+
+If no voters participated, the entire escrow balance routes to the buyback treasury.
+
 ---
 
 ## For Builders
