@@ -17,8 +17,11 @@
 }
 
 .connectIcon {
-  font-size: 48px;
+  width: 64px;
+  height: 64px;
   margin-bottom: 16px;
+  object-fit: contain;
+  opacity: 0.85;
 }
 
 .connectTitle {
@@ -119,8 +122,11 @@
 }
 
 .emptyIcon {
-  font-size: 48px;
+  width: 64px;
+  height: 64px;
   margin-bottom: 16px;
+  object-fit: contain;
+  opacity: 0.85;
 }
 
 .empty h2 {

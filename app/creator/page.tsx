@@ -198,7 +198,7 @@ export default function CreatorDashboardPage() {
     return (
       <div className={styles.page}>
         <div className={styles.connectPrompt}>
-          <div className={styles.connectIcon}>👤</div>
+          <img className={styles.connectIcon} src="/branding/white-logo.png" alt="" />
           <h1 className={styles.connectTitle}>Creator Dashboard</h1>
           <p className={styles.connectSubtitle}>
             Connect your wallet to view your projects, milestones, and earnings.
@@ -239,7 +239,7 @@ export default function CreatorDashboardPage() {
     return (
       <div className={styles.page}>
         <div className={styles.empty}>
-          <div className={styles.emptyIcon}>📦</div>
+          <img className={styles.emptyIcon} src="/branding/white-logo.png" alt="" />
           <h2>No Projects Yet</h2>
           <p>You haven&apos;t created any projects with CommitToShip yet.</p>
           <button className={styles.createBtn} onClick={() => router.push("/?tab=create")}>
