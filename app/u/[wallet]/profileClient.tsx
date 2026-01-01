@@ -178,16 +178,13 @@ export default function ProfileClient({ wallet }: { wallet: string }) {
       const signedUrl = String(info?.signedUrl ?? "");
       if (!signedUrl) throw new Error("Missing signedUrl");
 
-      const form = new FormData();
-      form.append("cacheControl", "3600");
-      form.append("", file);
-
       const uploadRes = await fetch(signedUrl, {
         method: "PUT",
         headers: {
           "x-upsert": "true",
+          "content-type": file.type || "application/octet-stream",
         },
-        body: form,
+        body: file,
       });
 
       if (!uploadRes.ok) {

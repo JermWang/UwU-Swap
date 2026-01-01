@@ -29,6 +29,16 @@ function supabaseStorageBaseUrl(): string {
   return `${supabaseUrl}/storage/v1`;
 }
 
+function absolutizeStorageUrl(rawUrl: string, input: { supabaseUrl: string; storageBase: string }): string {
+  const raw = String(rawUrl ?? "").trim();
+  if (!raw) return "";
+  if (/^https?:\/\//i.test(raw)) return raw;
+
+  const p = raw.replace(/^\/+/, "");
+  if (p.startsWith("storage/v1/")) return `${input.supabaseUrl}/${p}`;
+  return `${input.storageBase}/${p}`;
+}
+
 function extFromContentType(contentType: string): string {
   const ct = contentType.toLowerCase();
   if (ct.includes("image/png")) return "png";
@@ -84,6 +94,7 @@ export async function POST(req: Request) {
     const fileId = crypto.randomBytes(12).toString("hex");
     const path = `launch-staging/${sessionId}/${kind}/${fileId}.${ext}`;
 
+    const supabaseUrl = baseSupabaseUrl(requiredEnvAny(["SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_URL"]));
     const storageBase = supabaseStorageBaseUrl();
     const serviceRoleKey = requiredEnv("SUPABASE_SERVICE_ROLE_KEY");
 
@@ -114,13 +125,13 @@ export async function POST(req: Request) {
       );
     }
 
-    const url = new URL(String(json?.url ?? ""), storageBase);
+    const signedUrl = absolutizeStorageUrl(String(json?.url ?? ""), { supabaseUrl, storageBase });
+    const url = new URL(signedUrl);
     const token = url.searchParams.get("token") || "";
     if (!token) {
       return NextResponse.json({ error: "Storage did not return token" }, { status: 500 });
     }
 
-    const signedUrl = url.toString();
     const publicUrl = `${storageBase}/object/public/${encodeURIComponent(bucket)}/${path}`;
 
     return NextResponse.json({
