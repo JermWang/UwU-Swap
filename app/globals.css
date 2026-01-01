@@ -1251,7 +1251,7 @@ body[data-skin="landing"] .heroMarkImageSvg {
 body[data-skin="landing"] .heroLead {
   color: rgba(255, 255, 255, 0.74);
   margin: 0;
-  margin-top: clamp(-40px, -4vw, -24px);
+  margin-top: clamp(-80px, -8vw, -48px);
   padding: 0 var(--layout-gutter);
   position: relative;
   z-index: 2;
