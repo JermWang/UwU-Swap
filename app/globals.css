@@ -7586,6 +7586,225 @@ body[data-skin="app"] .commitComplianceFill {
   }
 }
 
+/* Launch Success Modal */
+.launchSuccessOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.launchSuccessModal {
+  max-width: 480px;
+  width: 100%;
+  padding: 32px;
+  border-radius: 20px;
+  border: 1px solid rgba(134, 239, 172, 0.25);
+  background: rgba(20, 20, 25, 0.98);
+  text-align: center;
+  animation: launchSuccessFadeIn 0.35s ease;
+}
+
+@keyframes launchSuccessFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.92) translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.launchSuccessIcon {
+  width: 64px;
+  height: 64px;
+  margin: 0 auto 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: linear-gradient(135deg, rgba(134, 239, 172, 0.2) 0%, rgba(96, 165, 250, 0.15) 100%);
+  border: 2px solid rgba(134, 239, 172, 0.4);
+}
+
+.launchSuccessIcon svg {
+  width: 32px;
+  height: 32px;
+  stroke: rgba(134, 239, 172, 1);
+}
+
+.launchSuccessImage {
+  width: 80px;
+  height: 80px;
+  border-radius: 16px;
+  object-fit: cover;
+  margin: 0 auto 16px;
+  border: 2px solid rgba(255, 255, 255, 0.1);
+}
+
+.launchSuccessTitle {
+  font-size: 24px;
+  font-weight: 700;
+  color: #fff;
+  margin: 0 0 8px;
+}
+
+.launchSuccessSubtitle {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.6);
+  margin: 0 0 24px;
+  line-height: 1.5;
+}
+
+.launchSuccessDetails {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.launchSuccessDetail {
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  text-align: left;
+}
+
+.launchSuccessDetailLabel {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.5);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 6px;
+}
+
+.launchSuccessDetailValue {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.9);
+  word-break: break-all;
+}
+
+.launchSuccessDetailMono {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.launchSuccessDetailLink {
+  color: rgba(96, 165, 250, 0.95);
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+
+.launchSuccessDetailLink:hover {
+  color: rgba(134, 239, 172, 1);
+}
+
+.launchSuccessDetailLink svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.launchSuccessCopyBtn {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.6);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  margin-left: auto;
+}
+
+.launchSuccessCopyBtn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.launchSuccessCopyBtn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.launchSuccessActions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.launchSuccessBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 14px 24px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: all 0.2s ease;
+  cursor: pointer;
+  border: none;
+}
+
+.launchSuccessBtnPrimary {
+  background: linear-gradient(135deg, rgba(134, 239, 172, 0.9) 0%, rgba(96, 165, 250, 0.8) 100%);
+  color: #000;
+}
+
+.launchSuccessBtnPrimary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 32px rgba(134, 239, 172, 0.3);
+}
+
+.launchSuccessBtnPrimary svg {
+  width: 16px;
+  height: 16px;
+}
+
+.launchSuccessBtnSecondary {
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #fff;
+}
+
+.launchSuccessBtnSecondary:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+@media (max-width: 480px) {
+  .launchSuccessModal {
+    padding: 24px 20px;
+  }
+
+  .launchSuccessTitle {
+    font-size: 20px;
+  }
+
+  .launchSuccessDetailMono {
+    font-size: 11px;
+  }
+}
+
 /* --- Touch-Friendly Improvements --- */
 @media (max-width: 768px) {
   /* Ensure minimum tap target sizes (44px recommended) */

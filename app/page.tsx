@@ -203,6 +203,15 @@ export default function Home() {
   const [adminAuthBusy, setAdminAuthBusy] = useState<string | null>(null);
   const [adminAuthError, setAdminAuthError] = useState<string | null>(null);
 
+  const [launchSuccess, setLaunchSuccess] = useState<{
+    commitmentId: string;
+    tokenMint: string;
+    launchTxSig: string;
+    name: string;
+    symbol: string;
+    imageUrl: string;
+  } | null>(null);
+
   const [projectEditMint, setProjectEditMint] = useState("");
   const [projectEditBusy, setProjectEditBusy] = useState<string | null>(null);
   const [projectEditError, setProjectEditError] = useState<string | null>(null);
@@ -1340,7 +1349,14 @@ export default function Home() {
         };
 
         const launched = await apiPost<{ commitmentId: string; tokenMint: string; launchTxSig: string }>("/api/launch", launchBody);
-        router.push(`/commit/${launched.commitmentId}`);
+        setLaunchSuccess({
+          commitmentId: launched.commitmentId,
+          tokenMint: launched.tokenMint,
+          launchTxSig: launched.launchTxSig,
+          name: draftName.trim(),
+          symbol: draftSymbol.trim(),
+          imageUrl: draftImageUrl,
+        });
         return;
       }
 
@@ -2198,6 +2214,95 @@ export default function Home() {
                 </div>
               </div>
             ) : null}
+
+      {/* Launch Success Modal */}
+      {launchSuccess ? (
+        <div className="launchSuccessOverlay">
+          <div className="launchSuccessModal">
+            <div className="launchSuccessIcon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                <polyline points="22 4 12 14.01 9 11.01" />
+              </svg>
+            </div>
+
+            {launchSuccess.imageUrl ? (
+              <img src={launchSuccess.imageUrl} alt="" className="launchSuccessImage" />
+            ) : null}
+
+            <h2 className="launchSuccessTitle">
+              {launchSuccess.name || launchSuccess.symbol} Launched!
+            </h2>
+            <p className="launchSuccessSubtitle">
+              Your token is now live on pump.fun with auto-locked creator fees.
+            </p>
+
+            <div className="launchSuccessDetails">
+              <div className="launchSuccessDetail">
+                <span className="launchSuccessDetailLabel">Contract Address</span>
+                <div className="launchSuccessDetailValue launchSuccessDetailMono">
+                  {launchSuccess.tokenMint}
+                  <button
+                    className="launchSuccessCopyBtn"
+                    onClick={() => {
+                      navigator.clipboard.writeText(launchSuccess.tokenMint);
+                    }}
+                    title="Copy"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <rect x="9" y="9" width="13" height="13" rx="2" />
+                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+
+              <div className="launchSuccessDetail">
+                <span className="launchSuccessDetailLabel">Launch Transaction</span>
+                <a
+                  href={`https://solscan.io/tx/${launchSuccess.launchTxSig}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="launchSuccessDetailValue launchSuccessDetailLink"
+                >
+                  {launchSuccess.launchTxSig.slice(0, 20)}...
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                    <polyline points="15 3 21 3 21 9" />
+                    <line x1="10" y1="14" x2="21" y2="3" />
+                  </svg>
+                </a>
+              </div>
+            </div>
+
+            <div className="launchSuccessActions">
+              <a
+                href={`https://pump.fun/coin/${launchSuccess.tokenMint}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="launchSuccessBtn launchSuccessBtnPrimary"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                  <polyline points="15 3 21 3 21 9" />
+                  <line x1="10" y1="14" x2="21" y2="3" />
+                </svg>
+                View on Pump.fun
+              </a>
+              <button
+                className="launchSuccessBtn launchSuccessBtnSecondary"
+                onClick={() => {
+                  const id = launchSuccess.commitmentId;
+                  setLaunchSuccess(null);
+                  router.push(`/commit/${id}`);
+                }}
+              >
+                Go to Dashboard
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       </main>
   );
 }
