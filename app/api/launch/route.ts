@@ -4,7 +4,7 @@ import crypto from "crypto";
 
 import { checkRateLimit } from "../../lib/rateLimit";
 import { getSafeErrorMessage } from "../../lib/safeError";
-import { getConnection } from "../../lib/solana";
+import { confirmTransactionSignature, getConnection } from "../../lib/solana";
 import { privyCreateSolanaWallet, privySignAndSendSolanaTransaction } from "../../lib/privy";
 import { buildUnsignedPumpfunCreateV2Tx } from "../../lib/pumpfun";
 import { createRewardCommitmentRecord, insertCommitment } from "../../lib/escrowStore";
@@ -152,6 +152,13 @@ export async function POST(req: Request) {
       walletId,
       caip2: SOLANA_CAIP2,
       transactionBase64: txBase64,
+    });
+
+    await confirmTransactionSignature({
+      connection,
+      signature: launchTxSig,
+      blockhash: String(tx.recentBlockhash ?? ""),
+      lastValidBlockHeight: Number((tx as any).lastValidBlockHeight ?? 0),
     });
 
     // Step 5: Create commitment record

@@ -1,0 +1,220 @@
+import { NextResponse } from "next/server";
+import { PublicKey } from "@solana/web3.js";
+import nacl from "tweetnacl";
+import bs58 from "bs58";
+
+import { checkRateLimit } from "../../../../../../lib/rateLimit";
+import { auditLog } from "../../../../../../lib/auditLog";
+import {
+  RewardMilestone,
+  getCommitment,
+  getEscrowSignerRef,
+  getRewardApprovalThreshold,
+  getRewardMilestoneApprovalCounts,
+  normalizeRewardMilestonesClaimable,
+  publicView,
+  sumReleasedLamports,
+  updateRewardTotalsAndMilestones,
+} from "../../../../../../lib/escrowStore";
+import {
+  getBalanceLamports,
+  getChainUnixTime,
+  getConnection,
+  keypairFromBase58Secret,
+  transferLamports,
+  transferLamportsFromPrivyWallet,
+} from "../../../../../../lib/solana";
+import { releaseRewardReleaseLock, setRewardReleaseLockTxSig, tryAcquireRewardReleaseLock } from "../../../../../../lib/rewardReleaseLock";
+import { getSafeErrorMessage } from "../../../../../../lib/safeError";
+
+export const runtime = "nodejs";
+
+function computeUnlockedLamports(milestones: RewardMilestone[]): number {
+  return milestones.reduce((acc, m) => {
+    if (m.status === "claimable" || m.status === "released") return acc + Number(m.unlockLamports || 0);
+    return acc;
+  }, 0);
+}
+
+function milestoneClaimMessage(input: { commitmentId: string; milestoneId: string }): string {
+  return `Commit To Ship\nMilestone Claim\nCommitment: ${input.commitmentId}\nMilestone: ${input.milestoneId}`;
+}
+
+export async function POST(req: Request, ctx: { params: { id: string; milestoneId: string } }) {
+  const rl = await checkRateLimit(req, { keyPrefix: "milestone:claim", limit: 30, windowSeconds: 60 });
+  if (!rl.allowed) {
+    const res = NextResponse.json({ error: "Rate limit exceeded" }, { status: 429 });
+    res.headers.set("retry-after", String(rl.retryAfterSeconds));
+    return res;
+  }
+
+  const id = ctx.params.id;
+  const milestoneId = ctx.params.milestoneId;
+
+  const body = (await req.json().catch(() => null)) as any;
+
+  try {
+    const record = await getCommitment(id);
+    if (!record) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+    if (record.kind !== "creator_reward") {
+      return NextResponse.json({ error: "Not a reward commitment" }, { status: 400 });
+    }
+
+    if (record.status === "failed") {
+      return NextResponse.json({ error: "Commitment is failed" }, { status: 409 });
+    }
+
+    if (!record.creatorPubkey) {
+      return NextResponse.json({ error: "Missing creator pubkey" }, { status: 500 });
+    }
+
+    const signatureB58 = typeof body?.signature === "string" ? body.signature.trim() : "";
+    if (!signatureB58) {
+      const message = milestoneClaimMessage({ commitmentId: id, milestoneId });
+      return NextResponse.json(
+        {
+          error: "signature required",
+          message,
+          creatorPubkey: record.creatorPubkey,
+        },
+        { status: 400 }
+      );
+    }
+
+    const expectedMessage = milestoneClaimMessage({ commitmentId: id, milestoneId });
+    const providedMessage = typeof body?.message === "string" ? body.message : expectedMessage;
+    if (providedMessage !== expectedMessage) {
+      return NextResponse.json({ error: "Invalid message" }, { status: 400 });
+    }
+
+    const signature = bs58.decode(signatureB58);
+    const creatorPk = new PublicKey(record.creatorPubkey);
+
+    const ok = nacl.sign.detached.verify(new TextEncoder().encode(expectedMessage), signature, creatorPk.toBytes());
+    if (!ok) return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+
+    const connection = getConnection();
+    const escrowPk = new PublicKey(record.escrowPubkey);
+
+    const [balanceLamports, nowUnix] = await Promise.all([getBalanceLamports(connection, escrowPk), getChainUnixTime(connection)]);
+
+    const milestones: RewardMilestone[] = Array.isArray(record.milestones) ? (record.milestones.slice() as RewardMilestone[]) : [];
+    const idx = milestones.findIndex((m: RewardMilestone) => m.id === milestoneId);
+    if (idx < 0) return NextResponse.json({ error: "Milestone not found" }, { status: 404 });
+
+    const approvalCounts = await getRewardMilestoneApprovalCounts(id);
+    const approvalThreshold = getRewardApprovalThreshold();
+    const normalized = normalizeRewardMilestonesClaimable({ milestones, nowUnix, approvalCounts, approvalThreshold });
+    const effectiveMilestones = normalized.milestones;
+
+    const m = effectiveMilestones[idx];
+
+    if (m.status === "released") {
+      return NextResponse.json({ error: "Already released", commitment: publicView(record) }, { status: 409 });
+    }
+
+    if (m.status !== "claimable") {
+      return NextResponse.json(
+        {
+          error: "Milestone not claimable",
+          nowUnix,
+          milestone: m,
+          commitment: publicView(record),
+        },
+        { status: 400 }
+      );
+    }
+
+    const unlockLamports = Number(m.unlockLamports);
+    if (!Number.isFinite(unlockLamports) || unlockLamports <= 0) {
+      return NextResponse.json({ error: "Invalid milestone unlock amount" }, { status: 500 });
+    }
+
+    if (balanceLamports < unlockLamports) {
+      return NextResponse.json(
+        {
+          error: "Escrow underfunded for this release",
+          balanceLamports,
+          requiredLamports: unlockLamports,
+          commitment: publicView(record),
+        },
+        { status: 400 }
+      );
+    }
+
+    const lock = await tryAcquireRewardReleaseLock({ commitmentId: id, milestoneId });
+    if (!lock.acquired) {
+      return NextResponse.json(
+        {
+          error: "Release already in progress (or already executed)",
+          existing: lock.existing,
+        },
+        { status: 409 }
+      );
+    }
+
+    const escrowRef = getEscrowSignerRef(record);
+    const to = creatorPk;
+
+    try {
+      const { signature: txSig } =
+        escrowRef.kind === "privy"
+          ? await transferLamportsFromPrivyWallet({
+              connection,
+              walletId: escrowRef.walletId,
+              fromPubkey: escrowPk,
+              to,
+              lamports: unlockLamports,
+            })
+          : await transferLamports({
+              connection,
+              from: keypairFromBase58Secret(escrowRef.escrowSecretKeyB58),
+              to,
+              lamports: unlockLamports,
+            });
+
+      await setRewardReleaseLockTxSig({ commitmentId: id, milestoneId, txSig });
+
+      const nextMilestones = effectiveMilestones.slice();
+      nextMilestones[idx] = {
+        ...m,
+        status: "released",
+        releasedAtUnix: nowUnix,
+        releasedTxSig: txSig,
+      };
+
+      const unlockedLamportsNext = computeUnlockedLamports(nextMilestones);
+      const releasedLamports = sumReleasedLamports(nextMilestones);
+      const totalFundedLamports = Math.max(record.totalFundedLamports ?? 0, balanceLamports + releasedLamports);
+
+      const allReleased = nextMilestones.length > 0 && nextMilestones.every((x) => x.status === "released");
+
+      const updated = await updateRewardTotalsAndMilestones({
+        id,
+        milestones: nextMilestones,
+        unlockedLamports: unlockedLamportsNext,
+        totalFundedLamports,
+        status: allReleased ? "completed" : "active",
+      });
+
+      await auditLog("creator_reward_milestone_claim_ok", { commitmentId: id, milestoneId, signature: txSig });
+
+      await releaseRewardReleaseLock({ commitmentId: id, milestoneId });
+
+      return NextResponse.json({
+        ok: true,
+        nowUnix,
+        signature: txSig,
+        commitment: publicView(updated),
+      });
+    } catch (e) {
+      await auditLog("creator_reward_milestone_claim_error", { commitmentId: id, milestoneId, error: getSafeErrorMessage(e) });
+      await releaseRewardReleaseLock({ commitmentId: id, milestoneId });
+      return NextResponse.json({ error: getSafeErrorMessage(e) }, { status: 500 });
+    }
+  } catch (e) {
+    await auditLog("creator_reward_milestone_claim_error", { commitmentId: id, milestoneId, error: getSafeErrorMessage(e) });
+    return NextResponse.json({ error: getSafeErrorMessage(e) }, { status: 500 });
+  }
+}

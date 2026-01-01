@@ -1509,7 +1509,7 @@ export default function Home() {
                         </div>
 
                         <div className="heroMark">
-                          <img src="/branding/white-logo.png" alt="Commit To Ship" className="heroMarkImage" />
+                          <img src="/branding/svg-logo.svg" alt="Commit To Ship" className="heroMarkImage heroMarkImageSvg" />
                         </div>
 
                         <p className="heroLead">

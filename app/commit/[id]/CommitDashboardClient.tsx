@@ -171,6 +171,25 @@ function signalMessage(commitmentId: string, milestoneId: string): string {
   return `Commit To Ship\nMilestone Approval Signal\nCommitment: ${commitmentId}\nMilestone: ${milestoneId}`;
 }
 
+function addMilestoneMessage(input: { commitmentId: string; requestId: string; title: string; unlockLamports: number }): string {
+  return `Commit To Ship\nAdd Milestone\nCommitment: ${input.commitmentId}\nRequest: ${input.requestId}\nTitle: ${input.title}\nUnlockLamports: ${input.unlockLamports}`;
+}
+
+function claimMessage(commitmentId: string, milestoneId: string): string {
+  return `Commit To Ship\nMilestone Claim\nCommitment: ${commitmentId}\nMilestone: ${milestoneId}`;
+}
+
+function makeRequestId(): string {
+  const rand = Math.random().toString(16).slice(2);
+  return `${Date.now()}:${rand}`;
+}
+
+function solToLamports(sol: string): number {
+  const n = Number(String(sol ?? "").trim());
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.floor(n * 1_000_000_000);
+}
+
 export default function CommitDashboardClient(props: Props) {
   const { escrowPubkey, explorerUrl, id, canMarkFailure, canMarkSuccess, kind } = props;
 
@@ -221,6 +240,9 @@ export default function CommitDashboardClient(props: Props) {
   const [creatorBusy, setCreatorBusy] = useState<string | null>(null);
   const [creatorError, setCreatorError] = useState<string | null>(null);
   const [creatorWalletPubkey, setCreatorWalletPubkey] = useState<string | null>(null);
+
+  const [newMilestoneTitle, setNewMilestoneTitle] = useState<string>("");
+  const [newMilestoneUnlockSol, setNewMilestoneUnlockSol] = useState<string>("0.25");
 
   const [signalSignerPubkey, setSignalSignerPubkey] = useState("");
   const [signalBusy, setSignalBusy] = useState<string | null>(null);
@@ -300,6 +322,88 @@ export default function CommitDashboardClient(props: Props) {
 
       await jsonPost(`/api/commitments/${id}/milestones/${milestoneId}/complete`, { message, signature });
       toast({ kind: "success", message: "Milestone marked complete" });
+      router.refresh();
+    } catch (e) {
+      const msg = (e as Error).message;
+      setCreatorError(msg);
+      toast({ kind: "error", message: msg });
+    } finally {
+      setCreatorBusy(null);
+    }
+  }
+
+  async function signAndClaimMilestone(milestoneId: string) {
+    setCreatorError(null);
+    setCreatorBusy(`claim:${milestoneId}`);
+    try {
+      const provider = getSolanaProvider();
+      if (!provider?.publicKey) throw new Error("Connect wallet first");
+      if (!provider.signMessage) throw new Error("Wallet does not support message signing");
+
+      const signerPubkey = provider.publicKey.toBase58();
+      setCreatorWalletPubkey(signerPubkey);
+
+      const expectedCreator = String(props.creatorPubkey ?? "").trim();
+      if (expectedCreator && signerPubkey !== expectedCreator) {
+        throw new Error("Connected wallet must match creator wallet to claim");
+      }
+
+      const message = claimMessage(id, milestoneId);
+      const signed = await provider.signMessage(new TextEncoder().encode(message), "utf8");
+      const signatureBytes: Uint8Array = signed?.signature ?? signed;
+      const signature = bs58.encode(signatureBytes);
+
+      await jsonPost(`/api/commitments/${id}/milestones/${milestoneId}/claim`, { message, signature });
+      toast({ kind: "success", message: "Milestone claimed" });
+      router.refresh();
+    } catch (e) {
+      const msg = (e as Error).message;
+      setCreatorError(msg);
+      toast({ kind: "error", message: msg });
+    } finally {
+      setCreatorBusy(null);
+    }
+  }
+
+  async function signAndAddMilestone() {
+    setCreatorError(null);
+    setCreatorBusy("addMilestone");
+    try {
+      const provider = getSolanaProvider();
+      if (!provider?.publicKey) throw new Error("Connect wallet first");
+      if (!provider.signMessage) throw new Error("Wallet does not support message signing");
+
+      const signerPubkey = provider.publicKey.toBase58();
+      setCreatorWalletPubkey(signerPubkey);
+
+      const expectedCreator = String(props.creatorPubkey ?? "").trim();
+      if (expectedCreator && signerPubkey !== expectedCreator) {
+        throw new Error("Connected wallet must match creator wallet to add milestones");
+      }
+
+      const title = String(newMilestoneTitle ?? "").trim();
+      if (!title) throw new Error("Milestone title required");
+
+      const unlockLamports = solToLamports(newMilestoneUnlockSol);
+      if (!unlockLamports) throw new Error("Unlock amount (SOL) required");
+
+      const requestId = makeRequestId();
+      const message = addMilestoneMessage({ commitmentId: id, requestId, title, unlockLamports });
+      const signed = await provider.signMessage(new TextEncoder().encode(message), "utf8");
+      const signatureBytes: Uint8Array = signed?.signature ?? signed;
+      const signature = bs58.encode(signatureBytes);
+
+      await jsonPost(`/api/commitments/${id}/milestones/add`, {
+        requestId,
+        title,
+        unlockLamports,
+        message,
+        signature,
+      });
+
+      setNewMilestoneTitle("");
+      setNewMilestoneUnlockSol("0.25");
+      toast({ kind: "success", message: "Milestone added" });
       router.refresh();
     } catch (e) {
       const msg = (e as Error).message;
@@ -1040,11 +1144,49 @@ export default function CommitDashboardClient(props: Props) {
           <div className={styles.primarySection}>
             <div className={styles.primaryTitle}>Milestones</div>
             <div className={styles.smallNote} style={{ marginTop: 10 }}>
-              Creator completes milestones. Token holders signal approval. After the delay and threshold, milestones become claimable. Admin releases funds via an explicit on-chain transfer.
+              Creator completes milestones. Token holders signal approval. After the delay and threshold, milestones become claimable. Creator can claim releases via signature.
             </div>
             <div className={styles.smallNote} style={{ marginTop: 8 }}>
-              Votes do not move funds. Admin release is required. Escrow can be underfunded, and releases will fail if escrow balance is insufficient.
+              Votes do not move funds. Escrow can be underfunded, and claims will fail if escrow balance is insufficient.
             </div>
+
+            {props.status !== "failed" ? (
+              <div style={{ marginTop: 14 }}>
+                <div className={styles.smallNote}>Creator controls (add milestones + claim).</div>
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 10 }}>
+                  <button className={styles.actionBtn} onClick={connectCreatorWallet} disabled={creatorBusy != null}>
+                    {creatorBusy === "connect" ? "Connecting…" : creatorWalletPubkey ? "Wallet Connected" : "Connect Creator Wallet"}
+                  </button>
+                </div>
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 10 }}>
+                  <input
+                    className={styles.adminInput}
+                    value={newMilestoneTitle}
+                    onChange={(e) => setNewMilestoneTitle(e.target.value)}
+                    placeholder="New milestone title"
+                    disabled={creatorBusy != null}
+                  />
+                  <input
+                    className={styles.adminInput}
+                    value={newMilestoneUnlockSol}
+                    onChange={(e) => setNewMilestoneUnlockSol(e.target.value)}
+                    placeholder="Unlock SOL"
+                    inputMode="decimal"
+                    disabled={creatorBusy != null}
+                  />
+                </div>
+                <div className={styles.actions} style={{ marginTop: 10, justifyContent: "flex-start" }}>
+                  <button
+                    className={`${styles.actionBtn} ${styles.actionPrimary}`}
+                    type="button"
+                    onClick={signAndAddMilestone}
+                    disabled={creatorBusy != null || !creatorWalletPubkey}
+                  >
+                    {creatorBusy === "addMilestone" ? "Submitting…" : "Sign & Add Milestone"}
+                  </button>
+                </div>
+              </div>
+            ) : null}
 
             {props.status !== "failed" ? (
               (() => {
@@ -1215,6 +1357,7 @@ export default function CommitDashboardClient(props: Props) {
                 const nowUnix = Number(props.nowUnix ?? 0);
                 const canComplete = m.status === "locked" && m.completedAtUnix == null;
                 const canRelease = m.status === "claimable";
+                const canClaim = m.status === "claimable";
 
                 const balanceLamports = Number(props.balanceLamports ?? 0);
                 const unlockLamports = Number(m.unlockLamports ?? 0);
@@ -1309,13 +1452,31 @@ export default function CommitDashboardClient(props: Props) {
 
                       {canRelease ? (
                         <div className={styles.milestoneAction}>
-                          <div className={styles.smallNote}>Admin release (explicit transfer from escrow to creator wallet).</div>
+                          <div className={styles.smallNote}>Claim release (escrow transfer to creator wallet).</div>
                           {underfunded ? (
                             <div className={styles.smallNote} style={{ marginTop: 8, color: "rgba(180, 40, 60, 0.86)" }}>
                               Escrow underfunded. Balance {fmtSol(balanceLamports)} SOL, requires {fmtSol(unlockLamports)} SOL.
                             </div>
                           ) : null}
                           <div className={styles.actions} style={{ marginTop: 10 }}>
+                            {canClaim ? (
+                              <>
+                                <button
+                                  className={styles.actionBtn}
+                                  onClick={connectCreatorWallet}
+                                  disabled={creatorBusy != null}
+                                >
+                                  {creatorBusy === "connect" ? "Connecting…" : creatorWalletPubkey ? "Wallet Connected" : "Connect Wallet"}
+                                </button>
+                                <button
+                                  className={`${styles.actionBtn} ${styles.actionPrimary}`}
+                                  onClick={() => signAndClaimMilestone(m.id)}
+                                  disabled={creatorBusy != null || !creatorWalletPubkey || underfunded}
+                                >
+                                  {creatorBusy === `claim:${m.id}` ? "Claiming…" : "Sign & Claim"}
+                                </button>
+                              </>
+                            ) : null}
                             <button
                               className={`${styles.actionBtn} ${styles.actionPrimary}`}
                               onClick={() => releaseMilestone(m.id)}

@@ -3,7 +3,7 @@ import { PublicKey, Transaction, SystemProgram } from "@solana/web3.js";
 
 import { checkRateLimit } from "../../../lib/rateLimit";
 import { getSafeErrorMessage } from "../../../lib/safeError";
-import { getConnection } from "../../../lib/solana";
+import { confirmTransactionSignature, getConnection } from "../../../lib/solana";
 import { getClaimableCreatorFeeLamports, buildCollectCreatorFeeInstruction } from "../../../lib/pumpfun";
 import { releasePumpfunCreatorFeeClaimLock, tryAcquirePumpfunCreatorFeeClaimLock } from "../../../lib/pumpfunClaimLock";
 import { privySignAndSendSolanaTransaction } from "../../../lib/privy";
@@ -72,6 +72,8 @@ async function sweepOne(commitmentId: string): Promise<any> {
 
     const txBase64 = tx.serialize({ requireAllSignatures: false }).toString("base64");
     const { signature } = await privySignAndSendSolanaTransaction({ walletId: privyWalletId, caip2: SOLANA_CAIP2, transactionBase64: txBase64 });
+
+    await confirmTransactionSignature({ connection, signature, blockhash, lastValidBlockHeight });
 
     const delta = sameWallet ? claimableLamports : transferAmount;
     const newTotalFunded = (record.totalFundedLamports ?? 0) + delta;

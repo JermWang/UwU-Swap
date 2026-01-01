@@ -129,6 +129,30 @@ export function getSolanaCaip2(): string {
   return "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
 }
 
+export async function confirmTransactionSignature(input: {
+  connection: Connection;
+  signature: string;
+  blockhash: string;
+  lastValidBlockHeight: number;
+}): Promise<void> {
+  const sig = String(input.signature ?? "").trim();
+  if (!sig) throw new Error("Missing signature");
+
+  const blockhash = String(input.blockhash ?? "").trim();
+  const lastValidBlockHeight = Number(input.lastValidBlockHeight);
+  if (!blockhash || !Number.isFinite(lastValidBlockHeight) || lastValidBlockHeight <= 0) {
+    const c = getServerCommitment();
+    await withRetry(() => input.connection.confirmTransaction(sig, c), { attempts: 4, baseDelayMs: 350 });
+    return;
+  }
+
+  const c = getServerCommitment();
+  await withRetry(
+    () => input.connection.confirmTransaction({ signature: sig, blockhash, lastValidBlockHeight }, c),
+    { attempts: 4, baseDelayMs: 350 }
+  );
+}
+
 export async function transferLamportsFromPrivyWallet(opts: {
   connection: Connection;
   walletId: string;
@@ -182,6 +206,8 @@ export async function transferLamportsFromPrivyWallet(opts: {
     transactionBase64: txBase64,
   });
 
+  await confirmTransactionSignature({ connection, signature: sent.signature, blockhash, lastValidBlockHeight });
+
   return { signature: sent.signature, amountLamports: lamports };
 }
 
@@ -233,6 +259,8 @@ export async function transferAllLamportsFromPrivyWallet(opts: {
     caip2: getSolanaCaip2(),
     transactionBase64: txBase64,
   });
+
+  await confirmTransactionSignature({ connection, signature: sent.signature, blockhash, lastValidBlockHeight });
 
   return { signature: sent.signature, amountLamports: lamportsToSend };
 }
