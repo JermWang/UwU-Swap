@@ -12,12 +12,20 @@ function requiredEnv(name: string): string {
   return v;
 }
 
+function requiredEnvAny(names: string[]): string {
+  for (const n of names) {
+    const v = String(process.env[n] ?? "").trim();
+    if (v) return v;
+  }
+  throw new Error(`${names[0]} is required`);
+}
+
 function baseSupabaseUrl(raw: string): string {
   return raw.replace(/\/+$/, "");
 }
 
 function supabaseStorageBaseUrl(): string {
-  const supabaseUrl = baseSupabaseUrl(requiredEnv("SUPABASE_URL"));
+  const supabaseUrl = baseSupabaseUrl(requiredEnvAny(["SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_URL"]));
   return `${supabaseUrl}/storage/v1`;
 }
 
@@ -30,6 +38,16 @@ function extFromContentType(contentType: string): string {
   return "png";
 }
 
+function missingEnvVars(): string[] {
+  const missing: string[] = [];
+  const supabaseUrl = String(process.env.SUPABASE_URL ?? "").trim();
+  const supabaseUrlPublic = String(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").trim();
+  const serviceRole = String(process.env.SUPABASE_SERVICE_ROLE_KEY ?? "").trim();
+  if (!supabaseUrl && !supabaseUrlPublic) missing.push("SUPABASE_URL");
+  if (!serviceRole) missing.push("SUPABASE_SERVICE_ROLE_KEY");
+  return missing;
+}
+
 export async function POST(req: Request) {
   try {
     const rl = await checkRateLimit(req, { keyPrefix: "launch-assets:upload-url", limit: 20, windowSeconds: 60 });
@@ -37,6 +55,17 @@ export async function POST(req: Request) {
       const res = NextResponse.json({ error: "Rate limit exceeded" }, { status: 429 });
       res.headers.set("retry-after", String(rl.retryAfterSeconds));
       return res;
+    }
+
+    const missing = missingEnvVars();
+    if (missing.length) {
+      return NextResponse.json(
+        {
+          error: "Server misconfigured for uploads",
+          missingEnv: missing,
+        },
+        { status: 500 }
+      );
     }
 
     const body = (await req.json().catch(() => null)) as any;
@@ -60,6 +89,8 @@ export async function POST(req: Request) {
 
     const createUrl = `${storageBase}/object/upload/sign/${encodeURIComponent(bucket)}/${path}`;
 
+    const expiresInSeconds = 2 * 60 * 60;
+
     const res = await fetch(createUrl, {
       method: "POST",
       headers: {
@@ -68,12 +99,19 @@ export async function POST(req: Request) {
         "content-type": "application/json",
         "x-upsert": "true",
       },
-      body: JSON.stringify({}),
+      body: JSON.stringify({ expiresIn: expiresInSeconds }),
     });
 
     const json = (await res.json().catch(() => ({}))) as any;
     if (!res.ok) {
-      return NextResponse.json({ error: json?.message ?? json?.error ?? `Storage request failed (${res.status})` }, { status: 500 });
+      return NextResponse.json(
+        {
+          error: json?.message ?? json?.error ?? `Storage request failed (${res.status})`,
+          storageStatus: res.status,
+          storageBody: typeof json === "object" ? json : { message: String(json ?? "") },
+        },
+        { status: 500 }
+      );
     }
 
     const url = new URL(String(json?.url ?? ""), storageBase);
@@ -92,9 +130,15 @@ export async function POST(req: Request) {
       token,
       signedUrl,
       publicUrl,
-      expiresInSeconds: 2 * 60 * 60,
+      expiresInSeconds,
     });
   } catch (e) {
-    return NextResponse.json({ error: getSafeErrorMessage(e) }, { status: 500 });
+    return NextResponse.json(
+      {
+        error: getSafeErrorMessage(e),
+        missingEnv: missingEnvVars(),
+      },
+      { status: 500 }
+    );
   }
 }
