@@ -324,7 +324,7 @@ export default function Home() {
       const maxBytes = 15 * 1024 * 1024;
       if (file.size > maxBytes) throw new Error("Icon must be 15MB or smaller (pump.fun)");
       const { width, height } = await readImageDimensions(file);
-      if (width < 1000 || height < 1000) throw new Error("Icon must be at least 1000×1000 (pump.fun)");
+      if (width < 500 || height < 500) throw new Error("Icon must be at least 500×500");
       const ratio = width / Math.max(1, height);
       if (Math.abs(ratio - 1) > 0.05) throw new Error("Icon should be square (1:1) (pump.fun)");
       return;
@@ -386,6 +386,36 @@ export default function Home() {
       kind: input.kind,
       contentType: input.file.type || "image/png",
       devVerify,
+    });
+
+    const signedUrl = String(info?.signedUrl ?? "");
+    if (!signedUrl) throw new Error("Missing signedUrl");
+
+    const form = new FormData();
+    form.append("cacheControl", "3600");
+    form.append("", input.file);
+
+    const uploadRes = await fetch(signedUrl, {
+      method: "PUT",
+      headers: { "x-upsert": "true" },
+      body: form,
+    });
+
+    if (!uploadRes.ok) {
+      const text = await uploadRes.text().catch(() => "");
+      throw new Error(`Upload failed (${uploadRes.status}) ${text}`);
+    }
+
+    const publicUrl = String(info?.publicUrl ?? "");
+    const path = String(info?.path ?? "");
+    if (!publicUrl) throw new Error("Missing publicUrl");
+    return { publicUrl, path };
+  }
+
+  async function uploadLaunchAsset(input: { kind: "icon" | "banner"; file: File }): Promise<{ publicUrl: string; path: string }> {
+    const info = await apiPost<any>("/api/launch/assets/upload-url", {
+      kind: input.kind,
+      contentType: input.file.type || "image/png",
     });
 
     const signedUrl = String(info?.signedUrl ?? "");
@@ -1631,7 +1661,8 @@ export default function Home() {
                           setBusy("upload:icon");
                           try {
                             await validatePumpfunAsset(f, "icon");
-                            const { publicUrl } = await uploadProjectAsset({ kind: "icon", file: f });
+                            const uploadFn = commitPath === "automated" ? uploadLaunchAsset : uploadProjectAsset;
+                            const { publicUrl } = await uploadFn({ kind: "icon", file: f });
                             setDraftImageUrl(publicUrl);
                           } catch (err) {
                             setError((err as Error).message);
@@ -1661,7 +1692,7 @@ export default function Home() {
                         </svg>
                         <div className="createUploadSpecTitle">Resolution</div>
                         <ul className="createUploadSpecList">
-                          <li>Min. 1000×1000px, 1:1 square</li>
+                          <li>Min. 500×500px, 1:1 square</li>
                         </ul>
                       </div>
                     </div>
@@ -1745,7 +1776,8 @@ export default function Home() {
                               setBusy("upload:banner");
                               try {
                                 await validatePumpfunAsset(f, "banner");
-                                const { publicUrl } = await uploadProjectAsset({ kind: "banner", file: f });
+                                const uploadFn = commitPath === "automated" ? uploadLaunchAsset : uploadProjectAsset;
+                                const { publicUrl } = await uploadFn({ kind: "banner", file: f });
                                 setDraftBannerUrl(publicUrl);
                               } catch (err) {
                                 setError((err as Error).message);
