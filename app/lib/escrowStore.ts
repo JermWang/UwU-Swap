@@ -24,6 +24,7 @@ export type RewardMilestone = {
   id: string;
   title: string;
   unlockLamports: number;
+  unlockPercent?: number;
   status: RewardMilestoneStatus;
   completedAtUnix?: number;
   claimableAtUnix?: number;
@@ -663,7 +664,7 @@ export function createRewardCommitmentRecord(input: {
   creatorPubkey: string;
   escrowPubkey: string;
   escrowSecretKeyB58: string;
-  milestones: Array<{ id: string; title: string; unlockLamports: number }>;
+  milestones: Array<{ id: string; title: string; unlockLamports?: number; unlockPercent?: number }>;
   tokenMint?: string;
   creatorFeeMode?: CreatorFeeMode;
 }): CommitmentRecord {
@@ -685,7 +686,8 @@ export function createRewardCommitmentRecord(input: {
     milestones: input.milestones.map((m) => ({
       id: m.id,
       title: m.title,
-      unlockLamports: m.unlockLamports,
+      unlockLamports: m.unlockLamports ?? 0,
+      unlockPercent: m.unlockPercent,
       status: "locked" as const,
     })),
     status: "active",

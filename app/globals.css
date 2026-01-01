@@ -5957,6 +5957,110 @@ body[data-skin="app"] .commitComplianceFill {
   color: rgba(239, 68, 68, 0.9);
 }
 
+.createMilestoneInfo {
+  display: flex;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: rgba(96, 165, 250, 0.08);
+  border: 1px solid rgba(96, 165, 250, 0.15);
+  margin-bottom: 16px;
+}
+
+.createMilestoneInfoIcon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  color: rgba(96, 165, 250, 0.7);
+  margin-top: 1px;
+}
+
+.createMilestoneInfoText {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.65);
+  line-height: 1.5;
+}
+
+.createMilestoneInfoText strong {
+  color: rgba(255, 255, 255, 0.85);
+  font-weight: 600;
+}
+
+.createMilestoneFieldWrap {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.createMilestoneFieldTitle {
+  flex: 1;
+}
+
+.createMilestoneFieldPercent {
+  width: 90px;
+  flex-shrink: 0;
+}
+
+.createMilestoneFieldLabel {
+  position: absolute;
+  top: -8px;
+  left: 10px;
+  font-size: 10px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.4);
+  background: #1a1a1a;
+  padding: 0 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.createMilestoneFieldUnit {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.4);
+  pointer-events: none;
+}
+
+.createMilestoneInputPercent {
+  padding-right: 28px;
+  text-align: right;
+}
+
+.createMilestoneTotal {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  margin-top: 12px;
+}
+
+.createMilestoneTotalValid {
+  background: rgba(134, 239, 172, 0.1);
+  color: rgba(134, 239, 172, 0.9);
+  border: 1px solid rgba(134, 239, 172, 0.2);
+}
+
+.createMilestoneTotalInvalid {
+  background: rgba(251, 146, 60, 0.1);
+  color: rgba(251, 146, 60, 0.9);
+  border: 1px solid rgba(251, 146, 60, 0.2);
+}
+
+.createMilestoneTotalHint {
+  font-weight: 400;
+  opacity: 0.7;
+}
+
+.createMilestoneTotalCheck {
+  font-size: 14px;
+}
+
 .createAddBtn {
   display: flex;
   align-items: center;

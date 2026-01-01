@@ -192,9 +192,9 @@ export default function Home() {
   const [creatorPubkey, setCreatorPubkey] = useState("");
   const [rewardTokenMint, setRewardTokenMint] = useState("");
   const [rewardCreatorFeeMode, setRewardCreatorFeeMode] = useState<CreatorFeeMode>("managed");
-  const [rewardMilestones, setRewardMilestones] = useState<Array<{ title: string; unlockSol: string }>>([
-    { title: "", unlockSol: "0.25" },
-    { title: "", unlockSol: "0.25" },
+  const [rewardMilestones, setRewardMilestones] = useState<Array<{ title: string; unlockPercent: string }>>([
+    { title: "", unlockPercent: "50" },
+    { title: "", unlockPercent: "50" },
   ]);
   const [deadlineLocal, setDeadlineLocal] = useState("");
 
@@ -254,14 +254,13 @@ export default function Home() {
   const rewardMilestonesParsed = useMemo(() => {
     return rewardMilestones.map((m) => {
       const title = m.title.trim();
-      const unlockSol = Number(m.unlockSol);
-      const unlockLamports = Number.isFinite(unlockSol) && unlockSol > 0 ? Math.floor(unlockSol * 1_000_000_000) : 0;
-      return { title, unlockSolRaw: m.unlockSol, unlockLamports };
+      const unlockPercent = parseInt(m.unlockPercent) || 0;
+      return { title, unlockPercent, unlockPercentRaw: m.unlockPercent };
     });
   }, [rewardMilestones]);
 
-  const rewardTotalUnlockLamports = useMemo(() => {
-    return rewardMilestonesParsed.reduce((sum, m) => sum + (m.unlockLamports || 0), 0);
+  const rewardTotalPercent = useMemo(() => {
+    return rewardMilestonesParsed.reduce((sum, m) => sum + (m.unlockPercent || 0), 0);
   }, [rewardMilestonesParsed]);
 
   const commitSteps = useMemo(() => {
@@ -1317,7 +1316,7 @@ export default function Home() {
         const milestones = rewardMilestones
           .map((m) => ({
             title: m.title.trim(),
-            unlockLamports: Math.floor(Number(m.unlockSol) * 1_000_000_000),
+            unlockPercent: parseInt(m.unlockPercent) || 0,
           }))
           .filter((m) => m.title.length > 0);
 
@@ -1348,7 +1347,7 @@ export default function Home() {
           const milestones = rewardMilestones
             .map((m) => ({
               title: m.title.trim(),
-              unlockLamports: Math.floor(Number(m.unlockSol) * 1_000_000_000),
+              unlockPercent: parseInt(m.unlockPercent) || 0,
             }))
             .filter((m) => m.title.length > 0);
 
@@ -1877,31 +1876,53 @@ export default function Home() {
                   {/* Milestones Section */}
                   <div className="createSection">
                     <h2 className="createSectionTitle">Milestones</h2>
-                    <p className="createSectionSub">Define what you&apos;ll deliver. Fees unlock as you complete each milestone.</p>
+                    <p className="createSectionSub">Define what you&apos;ll deliver. As your token trades and fees accumulate, each milestone unlocks its share.</p>
+
+                    <div className="createMilestoneInfo">
+                      <svg className="createMilestoneInfoIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <circle cx="12" cy="12" r="10" />
+                        <path d="M12 16v-4M12 8h.01" />
+                      </svg>
+                      <div className="createMilestoneInfoText">
+                        <strong>How it works:</strong> Set a percentage for each milestone. When you complete a milestone and holders approve it, that percentage of your accumulated fees unlocks.
+                      </div>
+                    </div>
 
                     <div className="createMilestoneList">
                       {rewardMilestones.map((m, idx) => (
                         <div key={idx} className="createMilestone">
                           <div className="createMilestoneNum">{idx + 1}</div>
                           <div className="createMilestoneFields">
-                            <input
-                              className="createMilestoneInput"
-                              value={m.title}
-                              onChange={(e) => setRewardMilestones((prev) => prev.map((x, i) => (i === idx ? { ...x, title: e.target.value } : x)))}
-                              placeholder={`Milestone ${idx + 1}`}
-                            />
-                            <input
-                              className="createMilestoneInput"
-                              value={m.unlockSol}
-                              onChange={(e) => setRewardMilestones((prev) => prev.map((x, i) => (i === idx ? { ...x, unlockSol: e.target.value } : x)))}
-                              placeholder="SOL"
-                              inputMode="decimal"
-                            />
+                            <div className="createMilestoneFieldWrap createMilestoneFieldTitle">
+                              <input
+                                className="createMilestoneInput"
+                                value={m.title}
+                                onChange={(e) => setRewardMilestones((prev) => prev.map((x, i) => (i === idx ? { ...x, title: e.target.value } : x)))}
+                                placeholder={idx === 0 ? "e.g. Launch website & socials" : idx === 1 ? "e.g. Release v1.0 product" : `What will you deliver?`}
+                              />
+                              <span className="createMilestoneFieldLabel">Deliverable</span>
+                            </div>
+                            <div className="createMilestoneFieldWrap createMilestoneFieldPercent">
+                              <input
+                                className="createMilestoneInput createMilestoneInputPercent"
+                                value={m.unlockPercent}
+                                onChange={(e) => {
+                                  const val = e.target.value.replace(/[^0-9]/g, "");
+                                  setRewardMilestones((prev) => prev.map((x, i) => (i === idx ? { ...x, unlockPercent: val } : x)));
+                                }}
+                                placeholder="%"
+                                inputMode="numeric"
+                                maxLength={3}
+                              />
+                              <span className="createMilestoneFieldUnit">%</span>
+                              <span className="createMilestoneFieldLabel">Unlock</span>
+                            </div>
                           </div>
                           <button
                             className="createMilestoneRemove"
                             onClick={() => setRewardMilestones((prev) => prev.filter((_, i) => i !== idx))}
                             disabled={rewardMilestones.length <= 1 || busy != null}
+                            title="Remove milestone"
                           >
                             ×
                           </button>
@@ -1909,9 +1930,25 @@ export default function Home() {
                       ))}
                     </div>
 
+                    {(() => {
+                      const total = rewardMilestones.reduce((sum, m) => sum + (parseInt(m.unlockPercent) || 0), 0);
+                      const isValid = total === 100;
+                      return (
+                        <div className={`createMilestoneTotal ${isValid ? "createMilestoneTotalValid" : "createMilestoneTotalInvalid"}`}>
+                          <span>Total: {total}%</span>
+                          {!isValid && <span className="createMilestoneTotalHint">(must equal 100%)</span>}
+                          {isValid && <span className="createMilestoneTotalCheck">✓</span>}
+                        </div>
+                      );
+                    })()}
+
                     <button
                       className="createAddBtn"
-                      onClick={() => setRewardMilestones((prev) => [...prev, { title: "", unlockSol: "0.25" }])}
+                      onClick={() => {
+                        const remaining = 100 - rewardMilestones.reduce((sum, m) => sum + (parseInt(m.unlockPercent) || 0), 0);
+                        const defaultPercent = Math.max(0, Math.min(remaining, 25));
+                        setRewardMilestones((prev) => [...prev, { title: "", unlockPercent: String(defaultPercent || 10) }]);
+                      }}
                       disabled={busy != null || rewardMilestones.length >= 12}
                     >
                       + Add milestone

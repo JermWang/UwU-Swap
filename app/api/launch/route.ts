@@ -74,14 +74,20 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Maximum 12 milestones allowed" }, { status: 400 });
     }
 
+    // Validate percentages sum to 100
+    const totalPercent = rawMilestones.reduce((sum: number, m: any) => sum + (Number(m?.unlockPercent) || 0), 0);
+    if (totalPercent !== 100) {
+      return NextResponse.json({ error: `Milestone percentages must total 100% (currently ${totalPercent}%)` }, { status: 400 });
+    }
+
     const milestones = rawMilestones.map((m: any, idx: number) => {
       const title = typeof m?.title === "string" ? m.title.trim() : "";
-      const unlockLamports = Number(m?.unlockLamports);
+      const unlockPercent = Number(m?.unlockPercent) || 0;
       if (!title.length) throw new Error(`Milestone ${idx + 1}: title required`);
       if (title.length > 80) throw new Error(`Milestone ${idx + 1}: title too long (max 80 chars)`);
-      if (!Number.isFinite(unlockLamports) || unlockLamports <= 0) throw new Error(`Milestone ${idx + 1}: invalid unlock amount`);
+      if (unlockPercent <= 0 || unlockPercent > 100) throw new Error(`Milestone ${idx + 1}: invalid unlock percentage`);
       const id = crypto.randomBytes(8).toString("hex");
-      return { id, title, unlockLamports: Math.floor(unlockLamports) };
+      return { id, title, unlockPercent };
     });
 
     // Optional social links
