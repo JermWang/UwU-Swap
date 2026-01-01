@@ -1980,84 +1980,68 @@ export default function Home() {
                   <section className="discoverPanel">
                     <div className="discoverHeader">
                       <div className="discoverHeaderTop">
-                        <h1 className="discoverTitle">Discover Projects</h1>
-                        <div className="discoverStats">
-                          <div className="discoverStat">
-                            <div className="discoverStatLabel">Projects</div>
-                            <div className="discoverStatValue">{fmtCompact(discoverStats.realCount)}</div>
+                        <div className="discoverTitleRow">
+                          <h1 className="discoverTitle">Discover</h1>
+                          <div className="discoverHeaderStats">
+                            <span className="discoverHeaderStat">{fmtCompact(discoverStats.realCount)} projects</span>
+                            <span className="discoverHeaderStatDot">·</span>
+                            <span className="discoverHeaderStat">{fmtCompact(discoverStats.escrowedSol)} SOL locked</span>
                           </div>
-                          <div className="discoverStat">
-                            <div className="discoverStatLabel">Active</div>
-                            <div className="discoverStatValue">{fmtCompact(discoverStats.active)}</div>
-                          </div>
-                          <div className="discoverStat">
-                            <div className="discoverStatLabel">Escrowed</div>
-                            <div className="discoverStatValue">{fmtCompact(discoverStats.escrowedSol)} SOL</div>
-                          </div>
+                        </div>
+                        <div className="discoverHeaderActions">
+                          <input
+                            className="discoverSearch"
+                            value={timelineQuery}
+                            onChange={(e) => setTimelineQuery(e.target.value)}
+                            placeholder="Search..."
+                          />
+                          <button className="discoverRefreshBtn" onClick={() => loadTimeline().catch((e) => setError((e as Error).message))} disabled={busy != null}>
+                            ↻
+                          </button>
                         </div>
                       </div>
                     </div>
 
-                    <div className="discoverControls">
-                      <div className="discoverControlsTop">
-                        <div className="timelineFilterRow">
-                          <button className={`timelineFilter ${timelineFilter === "curated" ? "timelineFilterActive" : ""}`} onClick={() => setTimelineFilter("curated")}>Hot</button>
-                          <button className={`timelineFilter ${timelineFilter === "completed" ? "timelineFilterActive" : ""}`} onClick={() => setTimelineFilter("completed")}>Shipped</button>
-                          <button className={`timelineFilter ${timelineFilter === "reward" ? "timelineFilterActive" : ""}`} onClick={() => setTimelineFilter("reward")}>Rewards</button>
-                          <button className={`timelineFilter ${timelineFilter === "all" ? "timelineFilterActive" : ""}`} onClick={() => setTimelineFilter("all")}>All</button>
-                        </div>
-                        <select className="timelineSelect" value={timelineSort} onChange={(e) => setTimelineSort(e.target.value as any)}>
-                          <option value="newest">Newest</option>
-                          <option value="amount_desc">Most Escrowed</option>
-                          <option value="oldest">Oldest</option>
-                        </select>
-                      </div>
-                      <div className="discoverControlsBottom">
-                        <input
-                          className="timelineSearch"
-                          value={timelineQuery}
-                          onChange={(e) => setTimelineQuery(e.target.value)}
-                          placeholder="Search by name, symbol, or address..."
-                        />
-                        <button className="timelineRefresh" onClick={() => loadTimeline().catch((e) => setError((e as Error).message))} disabled={busy != null}>
-                          Refresh
-                        </button>
-                      </div>
+                    <div className="discoverTabs">
+                      <button className={`discoverTab ${timelineFilter === "curated" ? "discoverTabActive" : ""}`} onClick={() => setTimelineFilter("curated")}>Hot</button>
+                      <button className={`discoverTab ${timelineFilter === "completed" ? "discoverTabActive" : ""}`} onClick={() => setTimelineFilter("completed")}>Shipped</button>
+                      <button className={`discoverTab ${timelineFilter === "reward" ? "discoverTabActive" : ""}`} onClick={() => setTimelineFilter("reward")}>Rewards</button>
+                      <button className={`discoverTab ${timelineFilter === "all" ? "discoverTabActive" : ""}`} onClick={() => setTimelineFilter("all")}>All</button>
+                      <div className="discoverTabSpacer" />
+                      <select className="discoverSortSelect" value={timelineSort} onChange={(e) => setTimelineSort(e.target.value as any)}>
+                        <option value="newest">Newest</option>
+                        <option value="amount_desc">Most Escrowed</option>
+                        <option value="oldest">Oldest</option>
+                      </select>
                     </div>
 
                     {timelineLoading ? (
-                      <div className="discoverGrid" aria-hidden="true">
-                        {Array.from({ length: 12 }).map((_, i) => (
-                          <div key={i} className="discoverCard discoverCardDisabled">
-                            <div className="discoverCardTop">
-                              <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 0, flex: 1 }}>
-                                <div className="skeleton skeletonLineSm" style={{ width: 160 }} />
-                                <div className="skeleton skeletonLineSm" style={{ width: 210 }} />
+                      <div className="discoverList">
+                        {Array.from({ length: 8 }).map((_, i) => (
+                          <div key={i} className="discoverRow discoverRowDisabled">
+                            <div className="discoverRowLeft">
+                              <div className="skeleton" style={{ width: 36, height: 36, borderRadius: 8 }} />
+                              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                                <div className="skeleton skeletonLineSm" style={{ width: 100 }} />
+                                <div className="skeleton skeletonLineSm" style={{ width: 60 }} />
                               </div>
-                              <div className="skeleton skeletonLineSm" style={{ width: 70, height: 18, borderRadius: 999 }} />
                             </div>
-                            <div style={{ marginTop: 10 }}>
-                              <div className="skeleton skeletonLineSm" style={{ width: 220 }} />
-                              <div className="skeleton skeletonLineSm" style={{ width: 190, marginTop: 8 }} />
-                            </div>
-                            <div style={{ marginTop: 14 }}>
-                              <div className="skeleton skeletonLineSm" style={{ width: "100%", height: 8, borderRadius: 999 }} />
+                            <div className="discoverRowRight">
+                              <div className="skeleton skeletonLineSm" style={{ width: 50 }} />
                             </div>
                           </div>
                         ))}
                       </div>
                     ) : discoverCards.length === 0 ? (
-                      <div className="timelineEmpty">No results. Try clearing filters.</div>
+                      <div className="discoverEmpty">No projects found. Try a different filter.</div>
                     ) : (
-                      <div className="discoverGrid">
+                      <div className="discoverList">
                         {discoverCards.map((c) => {
                           const nowUnix = Math.floor(Date.now() / 1000);
-                          const target = Math.max(0, Number(c.targetLamports || 0));
                           const escrowed = Math.max(0, Number(c.escrowedLamports || 0));
-                          const pct = target > 0 ? clamp01(escrowed / target) : 0;
 
                           const title = c.projectName || (c.projectSymbol ? `$${c.projectSymbol}` : c.tokenMint ? shortWallet(c.tokenMint) : "Project");
-                          const subtitle = c.projectName && c.projectSymbol ? `$${c.projectSymbol}` : c.projectSymbol ? `$${c.projectSymbol}` : "";
+                          const symbol = c.projectSymbol ? `$${c.projectSymbol}` : "";
 
                           const statusLower = String(c.status ?? "").toLowerCase();
                           const statusLabel =
@@ -2065,167 +2049,63 @@ export default function Home() {
                               ? "shipped"
                               : statusLower.includes("failed") || statusLower.includes("resolved_failure")
                                 ? "failed"
-                                : statusLower || "active";
-
-                          const credibilitySignals: string[] = [];
-                          if (String(c.creatorFeeMode) === "managed") credibilitySignals.push("auto-escrow");
-                          if (escrowed > 0) credibilitySignals.push("funds locked");
-                          if (c.milestonesReleased > 0) credibilitySignals.push(`${c.milestonesReleased} released`);
-                          if (c.events24h >= 5) credibilitySignals.push("high momentum");
+                                : "active";
 
                           const canNavigate = !c.isMock && c.commitmentId;
                           const caKey = `${c.key}:ca`;
+                          const timeAgo = c.lastActivityUnix ? unixAgoShort(c.lastActivityUnix, nowUnix) : "–";
 
                           return (
                             <div
                               key={c.key}
-                              className={`discoverCard ${!canNavigate ? "discoverCardDisabled" : ""}`}
+                              className={`discoverRow ${!canNavigate ? "discoverRowDisabled" : ""}`}
                               onClick={() => {
                                 if (!canNavigate) return;
                                 router.push(`/commit/${encodeURIComponent(c.commitmentId)}`);
                               }}
                             >
-                              <div className="discoverCardTop">
-                                <div style={{ minWidth: 0, flex: 1 }}>
-                                  <div className="tokenBadge">
-                                    <div className="tokenBadgeIcon" aria-hidden="true">
-                                      <span className="tokenBadgeFallback" />
-                                      {c.projectImageUrl ? (
-                                        <img
-                                          className="tokenBadgeImg"
-                                          src={c.projectImageUrl}
-                                          alt=""
-                                          onError={(ev) => {
-                                            (ev.currentTarget as HTMLImageElement).style.display = "none";
-                                          }}
-                                        />
-                                      ) : null}
-                                    </div>
-                                    <div className="tokenBadgeText">
-                                      <div className="tokenBadgeTitle">{title}</div>
-                                      <div className="tokenBadgeSubtitle">
-                                        {statusLabel} · {Math.round(pct * 100)}% escrowed
-                                      </div>
-                                    </div>
+                              <div className="discoverRowLeft">
+                                <div className="discoverRowImg">
+                                  {c.projectImageUrl ? (
+                                    <img
+                                      src={c.projectImageUrl}
+                                      alt=""
+                                      onError={(ev) => { (ev.currentTarget as HTMLImageElement).style.display = "none"; }}
+                                    />
+                                  ) : null}
+                                </div>
+                                <div className="discoverRowInfo">
+                                  <div className="discoverRowName">
+                                    {title}
+                                    {symbol && title !== symbol ? <span className="discoverRowSymbol">{symbol}</span> : null}
+                                  </div>
+                                  <div className="discoverRowMeta">
+                                    <span className={`discoverRowStatus discoverRowStatus--${statusLabel}`}>{statusLabel}</span>
+                                    <span className="discoverRowDot">·</span>
+                                    <span>{c.milestonesDone}/{c.milestonesTotal} milestones</span>
+                                    <span className="discoverRowDot">·</span>
+                                    <span>{timeAgo}</span>
                                   </div>
                                 </div>
-
-                                <div className="discoverPills">
-                                  <span className={`discoverPill ${statusLabel === "shipped" ? "discoverPillStrong" : ""}`}>{statusLabel}</span>
-                                  {c.isMock ? <span className="discoverPill">mock</span> : null}
-                                </div>
                               </div>
 
-                              <div className="discoverCardTitle">{c.statement || "Reward commitment"}</div>
-
-                              <div className="discoverMetrics">
-                                <div className="discoverMetric">
-                                  <div className="discoverMetricLabel">Escrowed</div>
-                                  <div className="discoverMetricValue">{fmtSol(escrowed)} SOL</div>
+                              <div className="discoverRowRight">
+                                <div className="discoverRowEscrowed">
+                                  <span className="discoverRowEscrowedValue">{fmtSol(escrowed)}</span>
+                                  <span className="discoverRowEscrowedLabel">SOL</span>
                                 </div>
-                                <div className="discoverMetric">
-                                  <div className="discoverMetricLabel">Progress</div>
-                                  <div className="discoverMetricValue">{c.milestonesDone}/{c.milestonesTotal}</div>
-                                </div>
-                                <div className="discoverMetric">
-                                  <div className="discoverMetricLabel">Activity</div>
-                                  <div className="discoverMetricValue">{c.events24h}/24h</div>
-                                </div>
-                                <div className="discoverMetric">
-                                  <div className="discoverMetricLabel">Updated</div>
-                                  <div className="discoverMetricValue">{c.lastActivityUnix ? unixAgoShort(c.lastActivityUnix, nowUnix) : "–"}</div>
-                                </div>
+                                <button
+                                  className="discoverRowCopy"
+                                  type="button"
+                                  onClick={(ev) => {
+                                    ev.stopPropagation();
+                                    if (c.tokenMint) copyTimeline(c.tokenMint, caKey);
+                                  }}
+                                  title="Copy CA"
+                                >
+                                  {timelineCopied === caKey ? "✓" : "CA"}
+                                </button>
                               </div>
-
-                              <div className="discoverBar" aria-hidden="true">
-                                <div className="discoverBarFill" style={{ width: `${Math.round(pct * 100)}%` }} />
-                              </div>
-
-                              <div className="discoverFoot" onClick={(ev) => ev.stopPropagation()} onKeyDown={(ev) => ev.stopPropagation()}>
-                                <div className="discoverFootLeft">
-                                  {c.tokenMint ? (
-                                    <button
-                                      className="discoverCopy"
-                                      type="button"
-                                      onClick={() => copyTimeline(c.tokenMint, caKey)}
-                                      title="Copy contract address"
-                                    >
-                                      <span className="discoverCopyLabel">CA</span>
-                                      <span className="discoverCopyValue mono">{shortWallet(c.tokenMint)}</span>
-                                      <span className="discoverCopyHint">{timelineCopied === caKey ? "copied" : "copy"}</span>
-                                    </button>
-                                  ) : null}
-                                </div>
-
-                                <div className="discoverFootRight">
-                                  {c.websiteUrl ? (
-                                    <div className="timelineQuickLink">
-                                      <a
-                                        className="timelineSocialLink"
-                                        href={c.websiteUrl}
-                                        target="_blank"
-                                        rel="noreferrer noopener"
-                                        aria-label="Website"
-                                        title="Website"
-                                      >
-                                        <SocialIcon type="website" />
-                                      </a>
-                                      <div className="timelineQuickHover">
-                                        <div className="timelineQuickHoverTitle">Website</div>
-                                        <div className="timelineQuickHoverValue">{c.websiteUrl}</div>
-                                      </div>
-                                    </div>
-                                  ) : null}
-                                  {c.xUrl ? (
-                                    <div className="timelineQuickLink">
-                                      <a className="timelineSocialLink" href={c.xUrl} target="_blank" rel="noreferrer noopener" aria-label="X" title="X">
-                                        <SocialIcon type="x" />
-                                      </a>
-                                      <div className="timelineQuickHover">
-                                        <div className="timelineQuickHoverTitle">X</div>
-                                        <div className="timelineQuickHoverValue">{c.xUrl}</div>
-                                      </div>
-                                    </div>
-                                  ) : null}
-                                  {c.telegramUrl ? (
-                                    <div className="timelineQuickLink">
-                                      <a
-                                        className="timelineSocialLink"
-                                        href={c.telegramUrl}
-                                        target="_blank"
-                                        rel="noreferrer noopener"
-                                        aria-label="Telegram"
-                                        title="Telegram"
-                                      >
-                                        <SocialIcon type="telegram" />
-                                      </a>
-                                      <div className="timelineQuickHover">
-                                        <div className="timelineQuickHoverTitle">Telegram</div>
-                                        <div className="timelineQuickHoverValue">{c.telegramUrl}</div>
-                                      </div>
-                                    </div>
-                                  ) : null}
-                                  {c.discordUrl ? (
-                                    <div className="timelineQuickLink">
-                                      <a
-                                        className="timelineSocialLink"
-                                        href={c.discordUrl}
-                                        target="_blank"
-                                        rel="noreferrer noopener"
-                                        aria-label="Discord"
-                                        title="Discord"
-                                      >
-                                        <SocialIcon type="discord" />
-                                      </a>
-                                      <div className="timelineQuickHover">
-                                        <div className="timelineQuickHoverTitle">Discord</div>
-                                        <div className="timelineQuickHoverValue">{c.discordUrl}</div>
-                                      </div>
-                                    </div>
-                                  ) : null}
-                                </div>
-                              </div>
-
                             </div>
                           );
                         })}
