@@ -1252,6 +1252,37 @@ export default function Home() {
     setError(null);
     setBusy("create");
     try {
+      // Automated launch mode - use /api/launch
+      if (commitKind === "creator_reward" && commitPath === "automated") {
+        const milestones = rewardMilestones
+          .map((m) => ({
+            title: m.title.trim(),
+            unlockLamports: Math.floor(Number(m.unlockSol) * 1_000_000_000),
+          }))
+          .filter((m) => m.title.length > 0);
+
+        const launchBody = {
+          name: draftName.trim(),
+          symbol: draftSymbol.trim(),
+          description: draftDescription.trim(),
+          imageUrl: draftImageUrl,
+          bannerUrl: draftBannerUrl,
+          statement,
+          payoutWallet: creatorPubkey.trim(),
+          milestones,
+          websiteUrl: draftWebsiteUrl.trim(),
+          xUrl: draftXUrl.trim(),
+          telegramUrl: draftTelegramUrl.trim(),
+          discordUrl: draftDiscordUrl.trim(),
+          devBuySol: 0.01, // Default dev buy
+        };
+
+        const launched = await apiPost<{ commitmentId: string; tokenMint: string; launchTxSig: string }>("/api/launch", launchBody);
+        router.push(`/commit/${launched.commitmentId}`);
+        return;
+      }
+
+      // Manual mode or personal commitment - use /api/commitments
       const body = (() => {
         if (commitKind === "creator_reward") {
           const milestones = rewardMilestones
