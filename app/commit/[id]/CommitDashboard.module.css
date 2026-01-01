@@ -625,6 +625,127 @@
   background: rgba(0, 0, 0, 0.25);
 }
 
+.votePanel {
+  margin-top: 14px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.votePanelHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.votePanelTitle {
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--fg);
+}
+
+.voteMono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+.votePanelActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.voteSelectedPill {
+  display: inline-flex;
+  align-items: center;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: rgba(0, 0, 0, 0.18);
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--fg);
+}
+
+.votePanelList {
+  margin-top: 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.voteRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.16);
+  cursor: pointer;
+}
+
+.voteRow:hover {
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.voteCheckbox {
+  margin-top: 2px;
+  width: 16px;
+  height: 16px;
+}
+
+.voteRowTop {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.voteRowTitle {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.voteRowAmount {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--fg);
+  white-space: nowrap;
+}
+
+.voteProgress {
+  margin-top: 8px;
+}
+
+.voteProgressMeta {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.voteProgressBar {
+  margin-top: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+}
+
+.voteProgressFill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.65), rgba(255, 255, 255, 0.20));
+}
+
 .rewardModePill {
   display: inline-flex;
   align-items: center;

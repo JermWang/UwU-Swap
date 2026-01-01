@@ -7,3 +7,5 @@ app/.env.local
 .DS_Store
 *.sql
 !supabase/migrations/*.sql
+
+*.tsbuildinfo

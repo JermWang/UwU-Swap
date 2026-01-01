@@ -173,30 +173,28 @@ export default function Home() {
 
   const [statement, setStatement] = useState("");
   const [commitKind, setCommitKind] = useState<"personal" | "creator_reward">("creator_reward");
-  const [commitPath, setCommitPath] = useState<null | "automated" | "manual">(null);
+  const [commitPath, setCommitPath] = useState<null | "automated" | "manual">("automated");
   const [commitStep, setCommitStep] = useState(1);
   const [statementTouched, setStatementTouched] = useState(false);
 
-  const [draftName, setDraftName] = useState("Atlas Bridge");
-  const [draftSymbol, setDraftSymbol] = useState("ATLAS");
-  const [draftDescription, setDraftDescription] = useState(
-    "Bridge monitor + proof relay with escrowed milestones and on-chain receipts. Built for uptime, clarity, and post-launch accountability."
-  );
+  const [draftName, setDraftName] = useState("");
+  const [draftSymbol, setDraftSymbol] = useState("");
+  const [draftDescription, setDraftDescription] = useState("");
   const [draftImageUrl, setDraftImageUrl] = useState("");
   const [draftBannerUrl, setDraftBannerUrl] = useState("");
-  const [draftWebsiteUrl, setDraftWebsiteUrl] = useState("https://atlasbridge.io");
-  const [draftXUrl, setDraftXUrl] = useState("https://x.com/atlasbridge");
+  const [draftWebsiteUrl, setDraftWebsiteUrl] = useState("");
+  const [draftXUrl, setDraftXUrl] = useState("");
   const [draftTelegramUrl, setDraftTelegramUrl] = useState("");
-  const [draftDiscordUrl, setDraftDiscordUrl] = useState("https://discord.gg/atlasbridge");
+  const [draftDiscordUrl, setDraftDiscordUrl] = useState("");
   const [authority, setAuthority] = useState("");
   const [destinationOnFail, setDestinationOnFail] = useState("");
   const [amountSol, setAmountSol] = useState("0.01");
   const [creatorPubkey, setCreatorPubkey] = useState("");
   const [rewardTokenMint, setRewardTokenMint] = useState("");
-  const [rewardCreatorFeeMode, setRewardCreatorFeeMode] = useState<CreatorFeeMode>("assisted");
+  const [rewardCreatorFeeMode, setRewardCreatorFeeMode] = useState<CreatorFeeMode>("managed");
   const [rewardMilestones, setRewardMilestones] = useState<Array<{ title: string; unlockSol: string }>>([
-    { title: "Ship milestone 1", unlockSol: "0.25" },
-    { title: "Ship milestone 2", unlockSol: "0.25" },
+    { title: "", unlockSol: "0.25" },
+    { title: "", unlockSol: "0.25" },
   ]);
   const [deadlineLocal, setDeadlineLocal] = useState("");
 
@@ -1510,933 +1508,318 @@ export default function Home() {
                 </div>
               </div>
             ) : tab === "commit" ? (
-              <div className="commitStage">
-                <div className="commitWrap">
-                  <div className="commitLayout">
-                      <section className="commitSurface commitSurfaceMain">
-                      <div className="commitHero commitHeroInSurface" ref={commitmentRef}>
-                        <h1 className="commitHeroTitle">Create Commitment</h1>
-                        <p className="commitHeroLead">Choose the level of automation and guarantees. Both paths are verifiable; only one is system-enforced.</p>
+              <div className="createPage" ref={commitmentRef}>
+                <div className="createWrap">
+                  <ClosedBetaNotice />
+
+                  {/* Image Upload Section */}
+                  <div className="createSection">
+                    <label className={`createUploadZone ${draftImageUrl ? "createUploadZoneActive" : ""}`}>
+                      {draftImageUrl ? (
+                        <img src={draftImageUrl} alt="Token icon" className="createPreviewImg" />
+                      ) : (
+                        <svg className="createUploadIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                          <rect x="3" y="3" width="18" height="18" rx="2" />
+                          <circle cx="8.5" cy="8.5" r="1.5" />
+                          <path d="M21 15l-5-5L5 21" />
+                        </svg>
+                      )}
+                      <div className="createUploadText">{draftImageUrl ? "Image uploaded" : "Select image to upload"}</div>
+                      <div className="createUploadHint">or drag and drop it here</div>
+                      <span className="createUploadBtn">{busy === "upload:icon" ? "Uploading..." : "Select file"}</span>
+                      <input
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp,image/gif"
+                        style={{ display: "none" }}
+                        disabled={busy != null}
+                        onChange={async (e) => {
+                          const f = e.currentTarget.files?.[0];
+                          e.currentTarget.value = "";
+                          if (!f) return;
+                          setError(null);
+                          setBusy("upload:icon");
+                          try {
+                            await validatePumpfunAsset(f, "icon");
+                            const { publicUrl } = await uploadProjectAsset({ kind: "icon", file: f });
+                            setDraftImageUrl(publicUrl);
+                          } catch (err) {
+                            setError((err as Error).message);
+                          } finally {
+                            setBusy(null);
+                          }
+                        }}
+                      />
+                    </label>
+
+                    <div className="createUploadSpecs">
+                      <div className="createUploadSpec">
+                        <svg className="createUploadSpecIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                          <polyline points="14,2 14,8 20,8" />
+                        </svg>
+                        <div className="createUploadSpecTitle">File size and type</div>
+                        <ul className="createUploadSpecList">
+                          <li>Max 15mb, .jpg, .gif or .png</li>
+                        </ul>
                       </div>
-
-                      <ClosedBetaNotice />
-
-                      <div className="commitWizard">
-                        <div className="commitWizardTop">
-                          <div className="commitWizardSteps" role="tablist" aria-label="Commitment wizard steps">
-                            {commitSteps.map((label, idx) => {
-                              const step = idx + 1;
-                              const active = step === commitStep;
-                              const done = step < commitStep;
-                              return (
-                                <button
-                                  key={label}
-                                  type="button"
-                                  className={`commitWizardStep ${active ? "commitWizardStepActive" : ""} ${done ? "commitWizardStepDone" : ""}`}
-                                  onClick={() => setCommitStep(step)}
-                                  disabled={busy != null || commitPath == null}
-                                  role="tab"
-                                  aria-selected={active}
-                                >
-                                  <span className="commitWizardStepIndex">{step}</span>
-                                  <span className="commitWizardStepLabel">{label}</span>
-                                </button>
-                              );
-                            })}
-                          </div>
-
-                          {commitPath != null ? (
-                            <div className="commitWizardNav">
-                              <button
-                                type="button"
-                                className="commitBtnSecondary commitBtnSmall"
-                                onClick={() => setCommitStep((s) => Math.min(commitSteps.length, s + 1))}
-                                disabled={busy != null || commitStep >= commitSteps.length}
-                              >
-                                Next
-                              </button>
-                            </div>
-                          ) : null}
-                        </div>
-
-                        {commitPath == null ? (
-                          <section className="commitCard commitCardPrimary">
-                            <div className="commitCardLabel">Choose your path</div>
-                            <div className="commitCardDesc">
-                              Automated is system-enforced (higher credibility). Manual is self-managed (lower guarantees). Both remain transparent.
-                            </div>
-
-                            <div className="commitTypeGrid" style={{ marginTop: 14 }}>
-                              <button
-                                className="commitTypeCard"
-                                onClick={() => {
-                                  setCommitKind("creator_reward");
-                                  setCommitPath("automated");
-                                  setRewardCreatorFeeMode("managed");
-                                  setCommitStep(1);
-                                }}
-                                disabled={busy != null}
-                              >
-                                <div className="commitTypeIcon" aria-hidden="true">
-                                  <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                    <path d="M12 2l8 4v6c0 5-3.2 9.4-8 10-4.8-.6-8-5-8-10V6l8-4z" stroke="currentColor" strokeWidth="2" />
-                                    <path d="M9.5 12.5l1.9 2 3.1-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                                  </svg>
-                                </div>
-
-                                <div className="commitTypeName">Automated Commit</div>
-                                <div className="commitTypeDesc">High-trust. Protocol enforces fee locking + milestone gating.</div>
-                              </button>
-
-                              <button
-                                className="commitTypeCard"
-                                onClick={() => {
-                                  setCommitKind("creator_reward");
-                                  setCommitPath("manual");
-                                  setRewardCreatorFeeMode("assisted");
-                                  setCommitStep(1);
-                                }}
-                                disabled={busy != null}
-                              >
-                                <div className="commitTypeIcon" aria-hidden="true">
-                                  <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                    <path d="M4 7h16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                                    <path d="M4 12h16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                                    <path d="M4 17h10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                                  </svg>
-                                </div>
-                                <div className="commitTypeName">Manual Commit</div>
-                                <div className="commitTypeDesc">Lower guarantees. Clear disclosures; enforcement is self-managed.</div>
-                              </button>
-                            </div>
-
-                            <div className="commitActions" style={{ marginTop: 14, justifyContent: "flex-start" }}>
-                              <button
-                                type="button"
-                                className="commitBtnTertiary"
-                                onClick={() => {
-                                  setCommitKind("personal");
-                                  setCommitPath("manual");
-                                  setCommitStep(1);
-                                }}
-                                disabled={busy != null}
-                              >
-                                Personal commitment (time-lock)
-                              </button>
-                            </div>
-                          </section>
-                        ) : null}
-
-                        {commitPath != null && commitKind === "creator_reward" && commitStep === 1 ? (
-                          <section className="commitCard commitCardPrimary">
-                            <div className="commitCardLabel">Asset</div>
-                            <div className="commitCardDesc">Define the asset + metadata. Then verify token authority (required) to proceed.</div>
-
-                            {commitPath === "manual" ? (
-                              <div className="commitInlineNotice" style={{ marginTop: 12 }}>
-                                Manual Commit is self-managed. CTS can provide tracking and receipts, but enforcement depends on voluntary actions and reputation.
-                              </div>
-                            ) : null}
-
-                            <div className="commitFieldGroup">
-                              <div className="commitField">
-                                <div className="commitFieldLabel">Coin icon</div>
-                                <div className="commitInputWithUnit">
-                                  <input className="commitInput" value={draftImageUrl ? "Uploaded" : ""} disabled placeholder="Click upload" />
-                                  <label className="commitInputUnit" style={{ cursor: busy != null ? "not-allowed" : "pointer" }}>
-                                    Upload
-                                    <input
-                                      type="file"
-                                      accept="image/png,image/jpeg,image/webp,image/gif"
-                                      style={{ display: "none" }}
-                                      disabled={busy != null}
-                                      onChange={async (e) => {
-                                        const f = e.currentTarget.files?.[0];
-                                        e.currentTarget.value = "";
-                                        if (!f) return;
-                                        setError(null);
-                                        setBusy("upload:icon");
-                                        try {
-                                          await validatePumpfunAsset(f, "icon");
-                                          const { publicUrl } = await uploadProjectAsset({ kind: "icon", file: f });
-                                          setDraftImageUrl(publicUrl);
-                                        } catch (err) {
-                                          setError((err as Error).message);
-                                        } finally {
-                                          setBusy(null);
-                                        }
-                                      }}
-                                    />
-                                  </label>
-                                </div>
-                              </div>
-                              {commitPath === "automated" ? (
-                                <div className="commitField">
-                                  <div className="commitFieldLabel">Banner</div>
-                                  <div className="commitInputWithUnit">
-                                    <input className="commitInput" value={draftBannerUrl ? "Uploaded" : ""} disabled placeholder="Click upload" />
-                                    <label className="commitInputUnit" style={{ cursor: busy != null ? "not-allowed" : "pointer" }}>
-                                      Upload
-                                      <input
-                                        type="file"
-                                        accept="image/png,image/jpeg,image/webp,image/gif"
-                                        style={{ display: "none" }}
-                                        disabled={busy != null}
-                                        onChange={async (e) => {
-                                          const f = e.currentTarget.files?.[0];
-                                          e.currentTarget.value = "";
-                                          if (!f) return;
-                                          setError(null);
-                                          setBusy("upload:banner");
-                                          try {
-                                            await validatePumpfunAsset(f, "banner");
-                                            const { publicUrl } = await uploadProjectAsset({ kind: "banner", file: f });
-                                            setDraftBannerUrl(publicUrl);
-                                          } catch (err) {
-                                            setError((err as Error).message);
-                                          } finally {
-                                            setBusy(null);
-                                          }
-                                        }}
-                                      />
-                                    </label>
-                                  </div>
-                                </div>
-                              ) : null}
-                              <div className="commitField">
-                                <div className="commitFieldLabel">Name</div>
-                                <input className="commitInput" value={draftName} onChange={(e) => setDraftName(e.target.value)} placeholder="Project name" />
-                              </div>
-                              <div className="commitField">
-                                <div className="commitFieldLabel">Ticker</div>
-                                <input className="commitInput" value={draftSymbol} onChange={(e) => setDraftSymbol(e.target.value)} placeholder="TICKER" />
-                              </div>
-                            </div>
-
-                            <div className="commitField" style={{ marginTop: 18 }}>
-                              <div className="commitFieldLabel">Description</div>
-                              <input className="commitInput" value={draftDescription} onChange={(e) => setDraftDescription(e.target.value)} placeholder="Short, factual description" />
-                            </div>
-
-                            <div className="commitFieldGroup" style={{ marginTop: 18 }}>
-                              <div className="commitField">
-                                <div className="commitFieldLabel">Website</div>
-                                <input className="commitInput" value={draftWebsiteUrl} onChange={(e) => setDraftWebsiteUrl(e.target.value)} placeholder="https://..." />
-                              </div>
-                              <div className="commitField">
-                                <div className="commitFieldLabel">X</div>
-                                <input className="commitInput" value={draftXUrl} onChange={(e) => setDraftXUrl(e.target.value)} placeholder="https://x.com/..." />
-                              </div>
-                            </div>
-
-                            <div className="commitFieldGroup" style={{ marginTop: 18 }}>
-                              <div className="commitField">
-                                <div className="commitFieldLabel">Telegram</div>
-                                <input className="commitInput" value={draftTelegramUrl} onChange={(e) => setDraftTelegramUrl(e.target.value)} placeholder="https://t.me/..." />
-                              </div>
-                              <div className="commitField">
-                                <div className="commitFieldLabel">Discord</div>
-                                <input className="commitInput" value={draftDiscordUrl} onChange={(e) => setDraftDiscordUrl(e.target.value)} placeholder="https://discord.gg/..." />
-                              </div>
-                            </div>
-
-                            <div className="commitField" style={{ marginTop: 18 }}>
-                              <div className="commitFieldLabel">Token Mint (Contract Address)</div>
-                              <input className="commitInput" value={rewardTokenMint} onChange={(e) => setRewardTokenMint(e.target.value)} placeholder="Token mint address" />
-                            </div>
-
-                            <div className="commitField" style={{ marginTop: 18 }}>
-                              <div className="commitFieldLabel">Statement</div>
-                              <input
-                                className="commitInput"
-                                value={statement}
-                                onChange={(e) => {
-                                  setStatementTouched(true);
-                                  setStatement(e.target.value);
-                                }}
-                                placeholder="Public commitment statement"
-                              />
-                            </div>
-
-                            <div className="commitField" style={{ marginTop: 18 }}>
-                              <div className="commitFieldLabel">Dev Wallet</div>
-                              <input
-                                className="commitInput"
-                                value={creatorPubkey}
-                                onChange={(e) => setCreatorPubkey(e.target.value)}
-                                placeholder="Connect wallet"
-                                readOnly={Boolean(devWalletPubkey)}
-                              />
-                            </div>
-
-                            <div className="commitActions" style={{ marginTop: 14, justifyContent: "flex-start" }}>
-                              <button className="commitBtnSecondary" onClick={connectDevWallet} disabled={busy != null || devVerifyBusy != null}>
-                                {devVerifyBusy === "connect" ? "Connecting..." : devWalletPubkey ? "Wallet Connected" : "Connect Wallet"}
-                              </button>
-                              <button
-                                className="commitBtnSecondary"
-                                onClick={verifyDevWallet}
-                                disabled={busy != null || devVerifyBusy != null || !devWalletPubkey || !rewardTokenMint.trim().length}
-                              >
-                                {devVerifyBusy === "verify" ? "Verifying..." : devVerify ? "Verified" : "Verify Authority"}
-                              </button>
-                            </div>
-
-                            {devVerifyResult ? (
-                              <div className="commitCardDesc" style={{ marginTop: 12 }}>
-                                Mint authority: {devVerifyResult.mintAuthority ?? "None"}
-                                <br />
-                                Update authority: {devVerifyResult.updateAuthority ?? "None"}
-                              </div>
-                            ) : null}
-                          </section>
-                        ) : null}
-
-                        {commitPath === "automated" && commitKind === "creator_reward" && commitStep === 2 ? (
-                          <section className="commitCard">
-                            <div className="commitCardLabel">Fees & automation</div>
-                            <div className="commitCardDesc">
-                              Automated Commit is system-enforced. After creation, protocol orchestration can auto-claim and lock creator fees in escrow.
-                            </div>
-                            <div className="commitField" style={{ marginTop: 12 }}>
-                              <div className="commitFieldLabel">Mode</div>
-                              <input className="commitInput" value="Managed Auto-Escrow" readOnly />
-                              <div className="commitCardDesc" style={{ marginTop: 10 }}>
-                                Guarantees:
-                                <br />
-                                - Fees can be locked without manual transfers
-                                <br />
-                                - Milestones gate releases
-                                <br />
-                                - Verifiable receipts for every unlock
-                              </div>
-                            </div>
-                          </section>
-                        ) : null}
-
-                        {commitKind === "creator_reward" && ((commitPath === "automated" && commitStep === 3) || (commitPath === "manual" && commitStep === 2)) ? (
-                          <section className="commitCard">
-                            <div className="commitCardLabel">Milestones</div>
-                            <div className="commitCardDesc">Define unlock amounts per milestone. Releases are on-chain transfers from escrow.</div>
-                            <div className="commitMilestones">
-                              {rewardMilestones.map((m, idx) => (
-                                <div key={idx} className="commitMilestone">
-                                  <div className="commitMilestoneNumber">{idx + 1}</div>
-                                  <div className="commitMilestoneFields">
-                                    <input
-                                      className="commitInput commitMilestoneTitle"
-                                      value={m.title}
-                                      onChange={(e) =>
-                                        setRewardMilestones((prev) => prev.map((x, i) => (i === idx ? { ...x, title: e.target.value } : x)))
-                                      }
-                                      placeholder={`Milestone ${idx + 1} title`}
-                                    />
-                                    <div className="commitInputWithUnit commitMilestoneAmount">
-                                      <input
-                                        className="commitInput"
-                                        value={m.unlockSol}
-                                        onChange={(e) =>
-                                          setRewardMilestones((prev) => prev.map((x, i) => (i === idx ? { ...x, unlockSol: e.target.value } : x)))
-                                        }
-                                        inputMode="decimal"
-                                        placeholder="0.00"
-                                      />
-                                      <div className="commitInputUnit">SOL</div>
-                                    </div>
-                                  </div>
-                                  <button
-                                    className="commitMilestoneRemove"
-                                    onClick={() => setRewardMilestones((prev) => prev.filter((_, i) => i !== idx))}
-                                    disabled={rewardMilestones.length <= 1 || busy != null}
-                                    title="Remove milestone"
-                                  >
-                                    ×
-                                  </button>
-                                </div>
-                              ))}
-                            </div>
-                            <button
-                              className="commitBtnSecondary"
-                              onClick={() => setRewardMilestones((prev) => [...prev, { title: "", unlockSol: "0.25" }])}
-                              disabled={busy != null || rewardMilestones.length >= 12}
-                            >
-                              + Add Milestone
-                            </button>
-                          </section>
-                        ) : null}
-
-                        {commitKind === "creator_reward" && ((commitPath === "automated" && commitStep === 4) || (commitPath === "manual" && commitStep === 3)) ? (
-                          <section className="commitCard">
-                            <div className="commitCardLabel">Confirm</div>
-                            <div className="commitCardDesc">Review the configuration. This will create an escrow-backed commitment record.</div>
-
-                            {commitIssues.length ? (
-                              <div className="commitIssues">
-                                {commitIssues.map((x) => (
-                                  <div key={x} className="commitIssue">{x}</div>
-                                ))}
-                              </div>
-                            ) : null}
-
-                            <div className="commitActions" style={{ marginTop: 18 }}>
-                              <button className="commitBtnPrimary" onClick={createCommitment} disabled={busy === "create" || commitIssues.length > 0}>
-                                {busy === "create" ? (
-                                  <>
-                                    <span className="commitBtnSpinner" />
-                                    Creating...
-                                  </>
-                                ) : commitPath === "automated" ? (
-                                  "Create Automated Commit"
-                                ) : (
-                                  "Create Manual Commit"
-                                )}
-                              </button>
-                              <button
-                                className="commitBtnSecondary"
-                                type="button"
-                                onClick={() => {
-                                  setCommitPath(null);
-                                  setCommitStep(1);
-                                }}
-                                disabled={busy != null}
-                              >
-                                Change path
-                              </button>
-                            </div>
-                          </section>
-                        ) : null}
-
-                        {commitKind === "personal" && commitStep === 2 ? (
-                          <section className="commitCard">
-                            <div className="commitCardLabel">Details</div>
-                            <div className="commitFieldGroup">
-                              <div className="commitField">
-                                <div className="commitFieldLabel">Your Wallet (Refund Address)</div>
-                                <input
-                                  className="commitInput"
-                                  value={authority}
-                                  onChange={(e) => setAuthority(e.target.value)}
-                                  placeholder="Your Solana public key"
-                                />
-                              </div>
-                              <div className="commitField">
-                                <div className="commitFieldLabel">Destination on Failure</div>
-                                <input
-                                  className="commitInput"
-                                  value={destinationOnFail}
-                                  onChange={(e) => setDestinationOnFail(e.target.value)}
-                                  placeholder="Where funds go if you fail"
-                                />
-                              </div>
-                            </div>
-                          </section>
-                        ) : null}
-
-                        {commitKind === "personal" && commitStep === 3 ? (
-                          <section className="commitCard">
-                            <div className="commitCardLabel">Funding</div>
-                            <div className="commitFieldGroup">
-                              <div className="commitField">
-                                <div className="commitFieldLabel">Amount to Lock</div>
-                                <div className="commitInputWithUnit">
-                                  <input
-                                    className="commitInput commitInputAmount"
-                                    value={amountSol}
-                                    onChange={(e) => setAmountSol(e.target.value)}
-                                    inputMode="decimal"
-                                    placeholder="0.00"
-                                  />
-                                  <div className="commitInputUnit">SOL</div>
-                                </div>
-                                <div className="commitQuickRow">
-                                  <button type="button" className="commitQuick" onClick={() => setAmountSol("0.05")} disabled={busy != null}>
-                                    0.05
-                                  </button>
-                                  <button type="button" className="commitQuick" onClick={() => setAmountSol("0.10")} disabled={busy != null}>
-                                    0.10
-                                  </button>
-                                  <button type="button" className="commitQuick" onClick={() => setAmountSol("0.25")} disabled={busy != null}>
-                                    0.25
-                                  </button>
-                                  <button type="button" className="commitQuick" onClick={() => setAmountSol("1")} disabled={busy != null}>
-                                    1
-                                  </button>
-                                </div>
-                              </div>
-                              <div className="commitField">
-                                <div className="commitFieldLabel">Deadline</div>
-                                <input
-                                  className="commitInput"
-                                  type="datetime-local"
-                                  value={deadlineLocal}
-                                  onChange={(e) => setDeadlineLocal(e.target.value)}
-                                />
-                                <div className="commitQuickRow">
-                                  <button type="button" className="commitQuick" onClick={() => setDeadlinePreset(24)} disabled={busy != null}>
-                                    24h
-                                  </button>
-                                  <button type="button" className="commitQuick" onClick={() => setDeadlinePreset(24 * 3)} disabled={busy != null}>
-                                    3d
-                                  </button>
-                                  <button type="button" className="commitQuick" onClick={() => setDeadlinePreset(24 * 7)} disabled={busy != null}>
-                                    7d
-                                  </button>
-                                </div>
-                              </div>
-                            </div>
-                          </section>
-                        ) : null}
-
-                        {commitKind === "personal" && commitStep === 4 ? (
-                          <section className="commitCard">
-                            <div className="commitCardLabel">Review</div>
-                            <div className="commitCardDesc">Confirm the terms below. You will get an escrow address after creation.</div>
-
-                            <div className="commitCardDesc" style={{ marginTop: 12 }}>
-                              Funds are held in an escrow wallet controlled by this service (custodial). An admin wallet can mark success/failure and trigger on-chain transfers according to the rules shown on the dashboard.
-                            </div>
-
-                            {commitIssues.length ? (
-                              <div className="commitIssues">
-                                {commitIssues.map((x) => (
-                                  <div key={x} className="commitIssue">{x}</div>
-                                ))}
-                              </div>
-                            ) : null}
-
-                            <div className="commitActions" style={{ marginTop: 18 }}>
-                              <button className="commitBtnPrimary" onClick={createCommitment} disabled={busy === "create" || commitIssues.length > 0}>
-                                {busy === "create" ? (
-                                  <>
-                                    <span className="commitBtnSpinner" />
-                                    Creating...
-                                  </>
-                                ) : (
-                                  "Create Commitment"
-                                )}
-                              </button>
-                            </div>
-                          </section>
-                        ) : null}
-
-
-                        {commitKind === "personal" && commitPath != null && commitStep === 1 ? (
-                          <section className="commitCard commitCardPrimary">
-                            <div className="commitCardLabel">Basics</div>
-                            <div className="commitField">
-                              <div className="commitFieldLabel">Statement</div>
-                              <input
-                                className="commitInput"
-                                value={statement}
-                                onChange={(e) => {
-                                  setStatementTouched(true);
-                                  setStatement(e.target.value);
-                                }}
-                                placeholder="What are you committing to ship?"
-                              />
-                            </div>
-                          </section>
-                        ) : null}
+                      <div className="createUploadSpec">
+                        <svg className="createUploadSpecIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                          <rect x="3" y="3" width="18" height="18" rx="2" />
+                          <line x1="3" y1="9" x2="21" y2="9" />
+                          <line x1="9" y1="21" x2="9" y2="9" />
+                        </svg>
+                        <div className="createUploadSpecTitle">Resolution</div>
+                        <ul className="createUploadSpecList">
+                          <li>Min. 1000×1000px, 1:1 square</li>
+                        </ul>
                       </div>
-                      </section>
+                    </div>
+                  </div>
 
-                      <aside className="commitSide">
-                        <section className="commitSurface commitSurfacePreview">
-                        <div className="commitCardLabel">Live Preview</div>
-                        {commitKind === "creator_reward" && commitPath != null ? (
-                          <div className="tokenBadge" style={{ marginTop: 10 }}>
-                            <div className="tokenBadgeIcon" aria-hidden="true">
-                              <span className="tokenBadgeFallback" />
-                              {draftImageUrl ? (
-                                <img
-                                  className="tokenBadgeImg"
-                                  src={draftImageUrl}
-                                  alt=""
-                                  onError={(ev) => {
-                                    (ev.currentTarget as HTMLImageElement).style.display = "none";
-                                  }}
-                                />
-                              ) : null}
-                            </div>
-                            <div className="tokenBadgeText">
-                              <div className="tokenBadgeTitle">{draftName.trim().length ? draftName.trim() : "Untitled"}</div>
-                              <div className="tokenBadgeSubtitle">{draftSymbol.trim().length ? `$${draftSymbol.trim()}` : ""}</div>
-                            </div>
+                  {/* Coin Details Section */}
+                  <div className="createSection">
+                    <h2 className="createSectionTitle">Coin details</h2>
+                    <p className="createSectionSub">Choose carefully, these can&apos;t be changed once created.</p>
+
+                    <div className="createFieldRow">
+                      <div className="createField">
+                        <label className="createLabel">Coin name</label>
+                        <input
+                          className="createInput"
+                          value={draftName}
+                          onChange={(e) => setDraftName(e.target.value)}
+                          placeholder="Name your coin"
+                        />
+                      </div>
+                      <div className="createField">
+                        <label className="createLabel">Ticker</label>
+                        <input
+                          className="createInput"
+                          value={draftSymbol}
+                          onChange={(e) => setDraftSymbol(e.target.value)}
+                          placeholder="e.g. DOGE"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="createField">
+                      <label className="createLabel">Description <span className="createLabelOptional">(Optional)</span></label>
+                      <textarea
+                        className="createTextarea"
+                        value={draftDescription}
+                        onChange={(e) => setDraftDescription(e.target.value)}
+                        placeholder="Write a short description"
+                      />
+                    </div>
+
+                    <div className="createField">
+                      <label className="createLabel">Token Mint Address</label>
+                      <input
+                        className="createInput"
+                        value={rewardTokenMint}
+                        onChange={(e) => setRewardTokenMint(e.target.value)}
+                        placeholder="Paste your token contract address"
+                      />
+                    </div>
+
+                    <button
+                      type="button"
+                      className="createExpandBtn"
+                      onClick={() => setCommitStep(commitStep === 2 ? 1 : 2)}
+                      style={{ marginTop: 16 }}
+                    >
+                      <svg className={`createExpandIcon ${commitStep === 2 ? "createExpandIconOpen" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M6 9l6 6 6-6" />
+                      </svg>
+                      Add social links <span className="createLabelOptional">(Optional)</span>
+                    </button>
+
+                    {commitStep === 2 ? (
+                      <div style={{ marginTop: 16 }}>
+                        <div className="createFieldRow">
+                          <div className="createField">
+                            <label className="createLabel">Website</label>
+                            <input className="createInput" value={draftWebsiteUrl} onChange={(e) => setDraftWebsiteUrl(e.target.value)} placeholder="https://..." />
                           </div>
-                        ) : null}
-                        <div className="commitPreviewTitle">{statement.trim().length ? statement.trim() : commitPath == null ? "Choose a path to begin" : "Untitled commitment"}</div>
-                        <div className="commitPreviewChips">
-                          {commitPath != null ? <span className={`commitPreviewChip ${commitPath === "automated" ? "commitPreviewChipReward" : ""}`}>{commitPath === "automated" ? "automated" : "manual"}</span> : null}
-                          {commitKind === "creator_reward" && commitPath != null ? (
-                            <span className="commitPreviewChip">{rewardCreatorFeeMode === "managed" ? "system-enforced" : "self-managed"}</span>
-                          ) : null}
-                          {commitPath != null ? (
-                            commitIssues.length === 0 ? (
-                              <span className="commitPreviewChip commitPreviewChipReady">ready</span>
-                            ) : (
-                              <span className="commitPreviewChip">needs input</span>
-                            )
-                          ) : (
-                            <span className="commitPreviewChip">choose</span>
-                          )}
-                        </div>
-
-                        <div className="commitPreviewGrid">
-                          {commitKind === "personal" ? (
-                            <>
-                              <div className="commitPreviewRow">
-                                <div className="commitPreviewLabel">Amount</div>
-                                <div className="commitPreviewValue">{amountLamports > 0 ? `${fmtSol(amountLamports)} SOL` : "—"}</div>
-                              </div>
-                              <div className="commitPreviewRow">
-                                <div className="commitPreviewLabel">Deadline</div>
-                                <div className="commitPreviewValue">{deadlineLocal.trim().length ? deadlineLocal.replace("T", " ") : "—"}</div>
-                              </div>
-                              <div className="commitPreviewRow">
-                                <div className="commitPreviewLabel">Refund</div>
-                                <div className="commitPreviewValue mono">{authority.trim().length ? authority.trim() : "—"}</div>
-                              </div>
-                              <div className="commitPreviewRow">
-                                <div className="commitPreviewLabel">On fail</div>
-                                <div className="commitPreviewValue mono">{destinationOnFail.trim().length ? destinationOnFail.trim() : "—"}</div>
-                              </div>
-                            </>
-                          ) : (
-                            <>
-                              <div className="commitPreviewRow">
-                                <div className="commitPreviewLabel">Creator</div>
-                                <div className="commitPreviewValue mono">{creatorPubkey.trim().length ? creatorPubkey.trim() : "—"}</div>
-                              </div>
-                              <div className="commitPreviewRow">
-                                <div className="commitPreviewLabel">Token gate</div>
-                                <div className="commitPreviewValue mono">{rewardTokenMint.trim().length ? rewardTokenMint.trim() : "none"}</div>
-                              </div>
-                              <div className="commitPreviewRow">
-                                <div className="commitPreviewLabel">Milestones</div>
-                                <div className="commitPreviewValue">{rewardMilestonesParsed.filter((m) => m.title.length).length || 0}</div>
-                              </div>
-                              <div className="commitPreviewRow">
-                                <div className="commitPreviewLabel">Total unlock</div>
-                                <div className="commitPreviewValue">{rewardTotalUnlockLamports > 0 ? `${fmtSol(rewardTotalUnlockLamports)} SOL` : "—"}</div>
-                              </div>
-                            </>
-                          )}
-                        </div>
-
-                        {commitIssues.length ? (
-                          <div className="commitPreviewIssues">
-                            {commitIssues.slice(0, 3).map((x) => (
-                              <div key={x} className="commitPreviewIssue">{x}</div>
-                            ))}
-                            {commitIssues.length > 3 ? <div className="commitPreviewIssue">+{commitIssues.length - 3} more</div> : null}
+                          <div className="createField">
+                            <label className="createLabel">X (Twitter)</label>
+                            <input className="createInput" value={draftXUrl} onChange={(e) => setDraftXUrl(e.target.value)} placeholder="https://x.com/..." />
                           </div>
-                        ) : null}
-                        </section>
-
-                        <section className="commitSurface">
-                        <div className="commitCardLabel">Admin Controls</div>
-                        <div className="commitCardDesc">Admin actions require an admin wallet session.</div>
-                        {adminAuthError ? <div className="commitError" style={{ marginTop: 10 }}>{adminAuthError}</div> : null}
-                        <div className="commitAdminActions" style={{ marginTop: 10 }}>
-                          <button className="commitBtnSecondary" onClick={adminSignIn} disabled={adminAuthBusy != null}>
-                            {adminWalletPubkey ? "Admin Signed In" : adminAuthBusy === "signin" ? "Signing in..." : "Admin Sign In"}
-                          </button>
-                          {adminWalletPubkey ? (
-                            <button className="commitBtnSecondary" onClick={adminSignOut} disabled={adminAuthBusy != null}>
-                              {adminAuthBusy === "signout" ? "Signing out..." : "Sign Out"}
-                            </button>
-                          ) : null}
                         </div>
+                        <div className="createFieldRow">
+                          <div className="createField">
+                            <label className="createLabel">Telegram</label>
+                            <input className="createInput" value={draftTelegramUrl} onChange={(e) => setDraftTelegramUrl(e.target.value)} placeholder="https://t.me/..." />
+                          </div>
+                          <div className="createField">
+                            <label className="createLabel">Discord</label>
+                            <input className="createInput" value={draftDiscordUrl} onChange={(e) => setDraftDiscordUrl(e.target.value)} placeholder="https://discord.gg/..." />
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
 
-                        <div style={{ marginTop: 18 }}>
-                          <div className="commitCardDesc" style={{ marginTop: 0 }}>Project Profile Editor (per token mint)</div>
-                          {projectEditError ? <div className="commitError" style={{ marginTop: 10 }}>{projectEditError}</div> : null}
-                          {projectEditResult?.ok ? (
-                            <div className="commitSuccess" style={{ marginTop: 10 }}>
-                              {projectEditResult?.action === "load"
-                                ? projectEditResult?.found
-                                  ? "Loaded"
-                                  : "Not found"
-                                : "Saved"}
-                            </div>
-                          ) : null}
-                          <div className="commitField" style={{ marginTop: 10 }}>
-                            <div className="commitFieldLabel">Token Mint</div>
+                  <div className="createDivider" />
+
+                  {/* Creator Fee Lock Section - Simplified */}
+                  <div className="createSection">
+                    <h2 className="createSectionTitle">Fee Lock Settings</h2>
+                    <p className="createSectionSub">Lock your pump.fun creator fees to build trust with holders.</p>
+
+                    <div className="createToggleRow">
+                      <div className="createToggleLeft">
+                        <div className="createToggleIcon">
+                          <svg className="createToggleIconSvg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                            <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                          </svg>
+                        </div>
+                        <div className="createToggleInfo">
+                          <div className="createToggleName">
+                            Auto-Lock Fees
+                            <span className="createToggleTag">Recommended</span>
+                          </div>
+                          <div className="createToggleDesc">Automatically lock creator fees in escrow</div>
+                        </div>
+                      </div>
+                      <label className="createSwitch">
+                        <input
+                          type="checkbox"
+                          className="createSwitchInput"
+                          checked={rewardCreatorFeeMode === "managed"}
+                          onChange={(e) => setRewardCreatorFeeMode(e.target.checked ? "managed" : "assisted")}
+                        />
+                        <span className="createSwitchTrack" />
+                      </label>
+                    </div>
+
+                    <div className="createInfoBox">
+                      <div className="createInfoTitle">How it works</div>
+                      <div className="createInfoText">
+                        Your pump.fun creator fees are held in escrow until you complete milestones. 
+                        Holders vote to approve releases. If milestones aren&apos;t met, fees stay locked.
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Milestones Section */}
+                  <div className="createSection">
+                    <h2 className="createSectionTitle">Milestones</h2>
+                    <p className="createSectionSub">Define what you&apos;ll deliver. Fees unlock as you complete each milestone.</p>
+
+                    <div className="createMilestoneList">
+                      {rewardMilestones.map((m, idx) => (
+                        <div key={idx} className="createMilestone">
+                          <div className="createMilestoneNum">{idx + 1}</div>
+                          <div className="createMilestoneFields">
                             <input
-                              className="commitInput"
-                              value={projectEditMint}
-                              onChange={(e) => setProjectEditMint(e.target.value)}
-                              placeholder="Token mint address"
+                              className="createMilestoneInput"
+                              value={m.title}
+                              onChange={(e) => setRewardMilestones((prev) => prev.map((x, i) => (i === idx ? { ...x, title: e.target.value } : x)))}
+                              placeholder={`Milestone ${idx + 1}`}
                             />
-                          </div>
-                          <div className="commitAdminActions" style={{ marginTop: 10 }}>
-                            <button
-                              className="commitBtnSecondary"
-                              onClick={() => setProjectEditMint(rewardTokenMint.trim())}
-                              disabled={projectEditBusy != null}
-                              type="button"
-                            >
-                              Use Reward Mint
-                            </button>
-                            <button className="commitBtnSecondary" onClick={adminLoadProjectProfile} disabled={projectEditBusy != null} type="button">
-                              {projectEditBusy === "load" ? "Loading..." : "Load"}
-                            </button>
-                            <button
-                              className="commitBtnSecondary"
-                              onClick={adminSaveProjectProfile}
-                              disabled={projectEditBusy != null || !adminWalletPubkey}
-                              type="button"
-                            >
-                              {projectEditBusy === "save" ? "Saving..." : "Save"}
-                            </button>
-                          </div>
-
-                          <div className="commitField" style={{ marginTop: 18 }}>
-                            <div className="commitFieldLabel">Name</div>
-                            <input className="commitInput" value={projectEditName} onChange={(e) => setProjectEditName(e.target.value)} placeholder="Project name" />
-                          </div>
-                          <div className="commitField" style={{ marginTop: 18 }}>
-                            <div className="commitFieldLabel">Symbol</div>
-                            <input className="commitInput" value={projectEditSymbol} onChange={(e) => setProjectEditSymbol(e.target.value)} placeholder="$TICKER" />
-                          </div>
-                          <div className="commitField" style={{ marginTop: 18 }}>
-                            <div className="commitFieldLabel">Description</div>
                             <input
-                              className="commitInput"
-                              value={projectEditDescription}
-                              onChange={(e) => setProjectEditDescription(e.target.value)}
-                              placeholder="Short description (max 600 chars)"
+                              className="createMilestoneInput"
+                              value={m.unlockSol}
+                              onChange={(e) => setRewardMilestones((prev) => prev.map((x, i) => (i === idx ? { ...x, unlockSol: e.target.value } : x)))}
+                              placeholder="SOL"
+                              inputMode="decimal"
                             />
-                          </div>
-
-                          <div className="commitField" style={{ marginTop: 18 }}>
-                            <div className="commitFieldLabel">Website URL</div>
-                            <input className="commitInput" value={projectEditWebsite} onChange={(e) => setProjectEditWebsite(e.target.value)} placeholder="https://..." />
-                          </div>
-                          <div className="commitField" style={{ marginTop: 18 }}>
-                            <div className="commitFieldLabel">X URL</div>
-                            <input className="commitInput" value={projectEditX} onChange={(e) => setProjectEditX(e.target.value)} placeholder="https://x.com/..." />
-                          </div>
-                          <div className="commitField" style={{ marginTop: 18 }}>
-                            <div className="commitFieldLabel">Telegram URL</div>
-                            <input className="commitInput" value={projectEditTelegram} onChange={(e) => setProjectEditTelegram(e.target.value)} placeholder="https://t.me/..." />
-                          </div>
-                          <div className="commitField" style={{ marginTop: 18 }}>
-                            <div className="commitFieldLabel">Discord URL</div>
-                            <input className="commitInput" value={projectEditDiscord} onChange={(e) => setProjectEditDiscord(e.target.value)} placeholder="https://discord.gg/..." />
-                          </div>
-                          <div className="commitField" style={{ marginTop: 18 }}>
-                            <div className="commitFieldLabel">Image</div>
-                            <div className="commitInputWithUnit">
-                              <input className="commitInput" value={projectEditImageUrl ? "Uploaded" : ""} disabled placeholder="Click upload" />
-                              <label className="commitInputUnit" style={{ cursor: projectEditBusy != null ? "not-allowed" : "pointer" }}>
-                                Upload
-                                <input
-                                  type="file"
-                                  accept="image/png,image/jpeg,image/webp,image/gif"
-                                  style={{ display: "none" }}
-                                  disabled={projectEditBusy != null}
-                                  onChange={async (e) => {
-                                    const f = e.currentTarget.files?.[0];
-                                    e.currentTarget.value = "";
-                                    if (!f) return;
-                                    setProjectEditError(null);
-                                    setProjectEditResult(null);
-                                    setProjectEditBusy("upload:image");
-                                    try {
-                                      await validatePumpfunAsset(f, "icon");
-                                      const { publicUrl } = await uploadAdminProjectAsset({ kind: "icon", file: f });
-                                      setProjectEditImageUrl(publicUrl);
-                                    } catch (err) {
-                                      setProjectEditError((err as Error).message);
-                                    } finally {
-                                      setProjectEditBusy(null);
-                                    }
-                                  }}
-                                />
-                              </label>
-                            </div>
-                          </div>
-                          <div className="commitField" style={{ marginTop: 18 }}>
-                            <div className="commitFieldLabel">Banner</div>
-                            <div className="commitInputWithUnit">
-                              <input className="commitInput" value={projectEditBannerUrl ? "Uploaded" : ""} disabled placeholder="Click upload" />
-                              <label className="commitInputUnit" style={{ cursor: projectEditBusy != null ? "not-allowed" : "pointer" }}>
-                                Upload
-                                <input
-                                  type="file"
-                                  accept="image/png,image/jpeg,image/webp,image/gif"
-                                  style={{ display: "none" }}
-                                  disabled={projectEditBusy != null}
-                                  onChange={async (e) => {
-                                    const f = e.currentTarget.files?.[0];
-                                    e.currentTarget.value = "";
-                                    if (!f) return;
-                                    setProjectEditError(null);
-                                    setProjectEditResult(null);
-                                    setProjectEditBusy("upload:banner");
-                                    try {
-                                      await validatePumpfunAsset(f, "banner");
-                                      const { publicUrl } = await uploadAdminProjectAsset({ kind: "banner", file: f });
-                                      setProjectEditBannerUrl(publicUrl);
-                                    } catch (err) {
-                                      setProjectEditError((err as Error).message);
-                                    } finally {
-                                      setProjectEditBusy(null);
-                                    }
-                                  }}
-                                />
-                              </label>
-                            </div>
-                          </div>
-                          <div className="commitField" style={{ marginTop: 18 }}>
-                            <div className="commitFieldLabel">Metadata URI</div>
-                            <input className="commitInput" value={projectEditMetadataUri} onChange={(e) => setProjectEditMetadataUri(e.target.value)} placeholder="https://..." />
-                          </div>
-                        </div>
-                        <div className="commitAdminActions" style={{ marginTop: 10 }}>
-                          <button className="commitBtnSecondary" onClick={sweep} disabled={busy === "sweep" || !adminWalletPubkey}>
-                            {busy === "sweep" ? "Sweeping..." : "Sweep Expired"}
-                          </button>
-                        </div>
-                        </section>
-
-                        <section className="commitSurface">
-                        <div className="commitListHeader">
-                          <div>
-                            <div className="commitCardLabel">Active Commitments</div>
-                            <div className="commitCardDesc">On-chain records. Deposit SOL to escrow addresses to fund.</div>
                           </div>
                           <button
-                            className="commitBtnSecondary commitBtnSmall"
-                            onClick={() => loadCommitments().catch((e) => setError((e as Error).message))}
-                            disabled={busy != null}
+                            className="createMilestoneRemove"
+                            onClick={() => setRewardMilestones((prev) => prev.filter((_, i) => i !== idx))}
+                            disabled={rewardMilestones.length <= 1 || busy != null}
                           >
-                            Refresh
+                            ×
                           </button>
                         </div>
-
-                        {commitmentsLoading ? (
-                          <div className="commitList" aria-hidden="true">
-                            {Array.from({ length: 3 }).map((_, i) => (
-                              <div key={i} className="commitListItem">
-                                <div className="commitListItemMain">
-                                  <div className="commitListItemInfo">
-                                    <div className="skeleton skeletonLine" style={{ width: "180px" }} />
-                                    <div className="commitListItemMeta" style={{ marginTop: 10 }}>
-                                      <div className="skeleton skeletonLineSm" style={{ width: "120px" }} />
-                                    </div>
-                                    <div style={{ marginTop: 10 }}>
-                                      <div className="skeleton skeletonLineSm" style={{ width: "220px" }} />
-                                    </div>
-                                  </div>
-                                  <div className="commitListItemActions">
-                                    <div className="skeleton" style={{ width: 120, height: 34, borderRadius: 999 }} />
-                                  </div>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        ) : commitments.length === 0 ? (
-                          <div className="commitListEmpty">No commitments yet. Create one above to get started.</div>
-                        ) : (
-                          <div className="commitList">
-                            {commitments
-                              .slice()
-                              .sort((a, b) => b.createdAtUnix - a.createdAtUnix)
-                              .map((c) => {
-                                const detail = expanded[c.id];
-                                return (
-                                  <div key={c.id} className="commitListItem">
-                                    <div className="commitListItemMain">
-                                      <div className="commitListItemInfo">
-                                        <div className="commitListItemTitle">
-                                          {c.kind === "creator_reward" ? "Reward Commitment" : `${lamportsToSol(c.amountLamports)} SOL`}
-                                        </div>
-                                        <div className="commitListItemMeta">
-                                          <span className="commitListItemStatus">{c.status}</span>
-                                          {c.kind === "creator_reward" ? (
-                                            <>
-                                              <span className={`commitListItemBadge ${String(c.creatorFeeMode ?? "assisted") === "managed" ? "commitListItemBadgeManaged" : ""}`}>
-                                                {String(c.creatorFeeMode ?? "assisted") === "managed" ? "auto-escrow" : "assisted"}
-                                              </span>
-                                              <span>
-                                                Escrowed: {lamportsToSol(c.totalFundedLamports ?? 0)} / {lamportsToSol((c.milestones ?? []).reduce((acc, m) => acc + Number(m.unlockLamports || 0), 0))} SOL
-                                              </span>
-                                            </>
-                                          ) : (
-                                            <span>Deadline: {new Date(c.deadlineUnix * 1000).toLocaleDateString()}</span>
-                                          )}
-                                        </div>
-
-                                        {c.kind === "creator_reward" ? (
-                                          (() => {
-                                            const funded = Number(c.totalFundedLamports ?? 0);
-                                            const total = (c.milestones ?? []).reduce((acc, m) => acc + Number(m.unlockLamports || 0), 0);
-                                            const pct = total > 0 ? clamp01(funded / total) : 0;
-                                            return (
-                                              <div className="commitCompliance">
-                                                <div className="commitComplianceBar" aria-hidden="true">
-                                                  <div className="commitComplianceFill" style={{ width: `${Math.round(pct * 100)}%` }} />
-                                                </div>
-                                                <div className="commitComplianceText">Compliance: {Math.round(pct * 100)}%</div>
-                                              </div>
-                                            );
-                                          })()
-                                        ) : null}
-                                      </div>
-                                      <div className="commitListItemActions">
-                                        <button className="commitBtnSecondary commitBtnSmall" onClick={() => router.push(`/commit/${c.id}`)}>
-                                          View Dashboard
-                                        </button>
-                                        <button
-                                          className="commitBtnSecondary commitBtnSmall"
-                                          onClick={() => loadCommitmentStatus(c.id).catch((e) => setError((e as Error).message))}
-                                          disabled={busy != null}
-                                        >
-                                          {busy === `inspect:${c.id}` ? "..." : "Inspect"}
-                                        </button>
-                                      </div>
-                                    </div>
-
-                                    {detail ? (
-                                      <div className="commitListItemDetail">
-                                        <div className="commitListItemDetailRow">
-                                          <span className="commitListItemDetailLabel">Escrow</span>
-                                          <span className="commitListItemDetailValue">{c.escrowPubkey}</span>
-                                        </div>
-                                        <div className="commitListItemDetailRow">
-                                          <span className="commitListItemDetailLabel">Balance</span>
-                                          <span className="commitListItemDetailValue">{lamportsToSol(detail.escrow.balanceLamports)} SOL</span>
-                                        </div>
-                                        {c.kind === "personal" && adminWalletPubkey ? (
-                                          <div className="commitListItemAdminActions">
-                                            <button
-                                              className="commitBtnTertiary"
-                                              onClick={() => resolve(c.id, "success").catch((e) => setError((e as Error).message))}
-                                              disabled={busy === `success:${c.id}`}
-                                            >
-                                              {busy === `success:${c.id}` ? "..." : "Mark Success"}
-                                            </button>
-                                            <button
-                                              className="commitBtnTertiary"
-                                              onClick={() => resolve(c.id, "failure").catch((e) => setError((e as Error).message))}
-                                              disabled={busy === `failure:${c.id}`}
-                                            >
-                                              {busy === `failure:${c.id}` ? "..." : "Mark Failure"}
-                                            </button>
-                                          </div>
-                                        ) : null}
-                                      </div>
-                                    ) : null}
-                                  </div>
-                                );
-                              })}
-                          </div>
-                        )}
-                        </section>
-                      </aside>
+                      ))}
                     </div>
+
+                    <button
+                      className="createAddBtn"
+                      onClick={() => setRewardMilestones((prev) => [...prev, { title: "", unlockSol: "0.25" }])}
+                      disabled={busy != null || rewardMilestones.length >= 12}
+                    >
+                      + Add milestone
+                    </button>
+                  </div>
+
+                  <div className="createDivider" />
+
+                  {/* Wallet Verification */}
+                  <div className="createSection">
+                    <h2 className="createSectionTitle">Verify Ownership</h2>
+                    <p className="createSectionSub">Connect and verify your wallet to prove you&apos;re the token creator.</p>
+
+                    <div className="createField">
+                      <label className="createLabel">Creator Wallet</label>
+                      <input
+                        className="createInput"
+                        value={creatorPubkey}
+                        onChange={(e) => setCreatorPubkey(e.target.value)}
+                        placeholder="Your wallet address"
+                        readOnly={Boolean(devWalletPubkey)}
+                      />
+                    </div>
+
+                    <div style={{ display: "flex", gap: 12, marginTop: 12, flexWrap: "wrap" }}>
+                      <button
+                        className="createUploadBtn"
+                        style={{ background: devWalletPubkey ? "rgba(134, 239, 172, 0.2)" : undefined, color: devWalletPubkey ? "rgba(134, 239, 172, 0.9)" : undefined }}
+                        onClick={connectDevWallet}
+                        disabled={busy != null || devVerifyBusy != null}
+                      >
+                        {devVerifyBusy === "connect" ? "Connecting..." : devWalletPubkey ? "✓ Connected" : "Connect Wallet"}
+                      </button>
+                      <button
+                        className="createUploadBtn"
+                        style={{ 
+                          background: devVerify ? "rgba(134, 239, 172, 0.2)" : "rgba(255,255,255,0.1)", 
+                          color: devVerify ? "rgba(134, 239, 172, 0.9)" : "rgba(255,255,255,0.7)" 
+                        }}
+                        onClick={verifyDevWallet}
+                        disabled={busy != null || devVerifyBusy != null || !devWalletPubkey || !rewardTokenMint.trim().length}
+                      >
+                        {devVerifyBusy === "verify" ? "Verifying..." : devVerify ? "✓ Verified" : "Verify Authority"}
+                      </button>
+                    </div>
+
+                    {devVerifyResult ? (
+                      <div className="createInfoBox" style={{ marginTop: 16, marginBottom: 0 }}>
+                        <div className="createInfoText">
+                          Mint authority: {devVerifyResult.mintAuthority ?? "None"}<br />
+                          Update authority: {devVerifyResult.updateAuthority ?? "None"}
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+
+                  {/* Error Display */}
+                  {error ? <div className="createError">{error}</div> : null}
+
+                  {/* Commit Issues */}
+                  {commitIssues.length > 0 ? (
+                    <div className="createInfoBox" style={{ borderColor: "rgba(251, 191, 36, 0.3)", background: "rgba(251, 191, 36, 0.08)" }}>
+                      <div className="createInfoTitle" style={{ color: "rgba(251, 191, 36, 0.9)" }}>Before you can create:</div>
+                      <div className="createInfoText">
+                        {commitIssues.map((issue, i) => (
+                          <div key={i}>• {issue}</div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {/* Submit Button */}
+                  <button
+                    className="createSubmitBtn"
+                    onClick={createCommitment}
+                    disabled={busy === "create" || commitIssues.length > 0}
+                  >
+                    {busy === "create" ? "Creating..." : "Create Commitment"}
+                  </button>
                 </div>
               </div>
             ) : tab === "discover" ? (

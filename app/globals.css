@@ -5096,3 +5096,609 @@ body[data-skin="app"] .commitComplianceFill {
     justify-content: center;
   }
 }
+
+/* ========================================
+   SIMPLIFIED CREATION FORM (Pump.fun inspired)
+   ======================================== */
+
+.createPage {
+  min-height: 100vh;
+  padding: 32px var(--layout-gutter) 64px;
+  background: transparent;
+}
+
+.createWrap {
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+.createHeader {
+  margin-bottom: 32px;
+}
+
+.createTitle {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: rgba(255, 255, 255, 0.95);
+  margin: 0 0 6px;
+}
+
+.createSub {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.55);
+  margin: 0;
+  line-height: 1.5;
+}
+
+.createSection {
+  margin-bottom: 32px;
+}
+
+.createSectionTitle {
+  font-size: 15px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.92);
+  margin: 0 0 6px;
+}
+
+.createSectionSub {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.50);
+  margin: 0 0 16px;
+}
+
+.createUploadZone {
+  border: 1px dashed rgba(255, 255, 255, 0.18);
+  border-radius: 16px;
+  background: rgba(0, 0, 0, 0.25);
+  padding: 48px 24px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.createUploadZone:hover {
+  border-color: rgba(255, 255, 255, 0.30);
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.createUploadZoneActive {
+  border-color: rgba(134, 239, 172, 0.5);
+  background: rgba(134, 239, 172, 0.05);
+}
+
+.createUploadIcon {
+  width: 48px;
+  height: 48px;
+  margin: 0 auto 16px;
+  opacity: 0.5;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.createUploadText {
+  font-size: 15px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.85);
+  margin: 0 0 4px;
+}
+
+.createUploadHint {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.45);
+  margin: 0 0 16px;
+}
+
+.createUploadBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 20px;
+  border-radius: 8px;
+  background: #22c55e;
+  color: #000;
+  font-size: 14px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.createUploadBtn:hover {
+  background: #16a34a;
+}
+
+.createUploadSpecs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  margin-top: 24px;
+  padding-top: 24px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.createUploadSpec {
+  text-align: left;
+}
+
+.createUploadSpecIcon {
+  width: 20px;
+  height: 20px;
+  margin-bottom: 8px;
+  opacity: 0.5;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.createUploadSpecTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.75);
+  margin: 0 0 6px;
+}
+
+.createUploadSpecList {
+  margin: 0;
+  padding: 0 0 0 16px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.45);
+  line-height: 1.6;
+}
+
+.createUploadSpecList li {
+  margin-bottom: 2px;
+}
+
+.createExpandBtn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+
+.createExpandBtn:hover {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.createExpandIcon {
+  width: 16px;
+  height: 16px;
+  transition: transform 0.2s ease;
+}
+
+.createExpandIconOpen {
+  transform: rotate(180deg);
+}
+
+.createFieldRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+@media (max-width: 520px) {
+  .createFieldRow {
+    grid-template-columns: 1fr;
+  }
+}
+
+.createField {
+  margin-bottom: 16px;
+}
+
+.createField:last-child {
+  margin-bottom: 0;
+}
+
+.createLabel {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.85);
+  margin-bottom: 8px;
+}
+
+.createLabelOptional {
+  font-weight: 400;
+  color: rgba(255, 255, 255, 0.40);
+  margin-left: 4px;
+}
+
+.createInput {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.35);
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 14px;
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+.createInput::placeholder {
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.createInput:hover {
+  border-color: rgba(255, 255, 255, 0.20);
+}
+
+.createInput:focus {
+  border-color: rgba(255, 255, 255, 0.35);
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.createTextarea {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.35);
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 14px;
+  outline: none;
+  resize: vertical;
+  min-height: 80px;
+  font-family: inherit;
+  transition: all 0.2s ease;
+}
+
+.createTextarea::placeholder {
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.createTextarea:hover {
+  border-color: rgba(255, 255, 255, 0.20);
+}
+
+.createTextarea:focus {
+  border-color: rgba(255, 255, 255, 0.35);
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.createToggleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: rgba(0, 0, 0, 0.25);
+  margin-bottom: 12px;
+}
+
+.createToggleRow:last-child {
+  margin-bottom: 0;
+}
+
+.createToggleLeft {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.createToggleIcon {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.createToggleIconSvg {
+  width: 18px;
+  height: 18px;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.createToggleInfo {
+  min-width: 0;
+}
+
+.createToggleName {
+  font-size: 14px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.90);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.createToggleTag {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 3px 6px;
+  border-radius: 4px;
+  background: #22c55e;
+  color: #000;
+}
+
+.createToggleDesc {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.45);
+  margin-top: 2px;
+}
+
+.createToggleHint {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.40);
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.createToggleHintLink {
+  color: #60a5fa;
+  text-decoration: none;
+}
+
+.createToggleHintLink:hover {
+  text-decoration: underline;
+}
+
+.createSwitch {
+  position: relative;
+  width: 44px;
+  height: 24px;
+  flex-shrink: 0;
+}
+
+.createSwitchInput {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.createSwitchTrack {
+  position: absolute;
+  cursor: pointer;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 24px;
+  transition: all 0.2s ease;
+}
+
+.createSwitchTrack::before {
+  content: "";
+  position: absolute;
+  height: 18px;
+  width: 18px;
+  left: 3px;
+  bottom: 3px;
+  background: rgba(255, 255, 255, 0.85);
+  border-radius: 50%;
+  transition: all 0.2s ease;
+}
+
+.createSwitchInput:checked + .createSwitchTrack {
+  background: #22c55e;
+}
+
+.createSwitchInput:checked + .createSwitchTrack::before {
+  transform: translateX(20px);
+  background: #fff;
+}
+
+.createMilestoneList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.createMilestone {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.createMilestoneNum {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.10);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.70);
+  flex-shrink: 0;
+}
+
+.createMilestoneFields {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 100px;
+  gap: 10px;
+  min-width: 0;
+}
+
+@media (max-width: 480px) {
+  .createMilestoneFields {
+    grid-template-columns: 1fr;
+  }
+}
+
+.createMilestoneInput {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: rgba(0, 0, 0, 0.30);
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 13px;
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+.createMilestoneInput::placeholder {
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.createMilestoneInput:focus {
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.createMilestoneRemove {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: none;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 18px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.createMilestoneRemove:hover {
+  background: rgba(239, 68, 68, 0.15);
+  color: rgba(239, 68, 68, 0.9);
+}
+
+.createAddBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px dashed rgba(255, 255, 255, 0.15);
+  background: transparent;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-top: 12px;
+}
+
+.createAddBtn:hover {
+  border-color: rgba(255, 255, 255, 0.25);
+  color: rgba(255, 255, 255, 0.85);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.createInfoBox {
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: rgba(0, 0, 0, 0.25);
+  margin-bottom: 24px;
+}
+
+.createInfoTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.85);
+  margin: 0 0 6px;
+}
+
+.createInfoText {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.50);
+  margin: 0;
+  line-height: 1.5;
+}
+
+.createSubmitBtn {
+  width: 100%;
+  padding: 16px 24px;
+  border-radius: 12px;
+  border: none;
+  background: #22c55e;
+  color: #000;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-top: 8px;
+}
+
+.createSubmitBtn:hover:not(:disabled) {
+  background: #16a34a;
+}
+
+.createSubmitBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.createBackBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 0;
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  margin-bottom: 16px;
+  transition: color 0.2s ease;
+}
+
+.createBackBtn:hover {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.createPreviewImg {
+  width: 100%;
+  max-width: 200px;
+  aspect-ratio: 1;
+  border-radius: 12px;
+  object-fit: cover;
+  margin: 0 auto 16px;
+  display: block;
+}
+
+.createDivider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.08);
+  margin: 24px 0;
+}
+
+.createError {
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  background: rgba(239, 68, 68, 0.08);
+  color: rgba(239, 68, 68, 0.9);
+  font-size: 13px;
+  margin-bottom: 16px;
+}
+
+.createSuccess {
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(134, 239, 172, 0.3);
+  background: rgba(134, 239, 172, 0.08);
+  color: rgba(134, 239, 172, 0.9);
+  font-size: 13px;
+  margin-bottom: 16px;
+}

@@ -230,6 +230,8 @@ export default function CommitDashboardClient(props: Props) {
   const [holderWalletPubkey, setHolderWalletPubkey] = useState<string | null>(null);
   const [holderBusy, setHolderBusy] = useState<string | null>(null);
 
+  const [selectedVoteMilestoneIds, setSelectedVoteMilestoneIds] = useState<string[]>([]);
+
   const [failureClaimBusy, setFailureClaimBusy] = useState<string | null>(null);
   const [failureClaimError, setFailureClaimError] = useState<string | null>(null);
   const [failureClaimResult, setFailureClaimResult] = useState<any>(null);
@@ -667,6 +669,54 @@ export default function CommitDashboardClient(props: Props) {
     }
   }
 
+  function toggleSelectedVoteMilestone(milestoneId: string) {
+    setSelectedVoteMilestoneIds((prev) => {
+      if (prev.includes(milestoneId)) return prev.filter((x) => x !== milestoneId);
+      return [...prev, milestoneId];
+    });
+  }
+
+  async function signAndSignalSelectedMilestones(milestoneIds: string[]) {
+    setSignalError(null);
+    setHolderBusy("sign:batch");
+    setSignalBusy("signal:batch");
+    try {
+      const provider = getSolanaProvider();
+      if (!provider?.publicKey) {
+        if (!provider?.connect) throw new Error("Wallet provider not found");
+        await provider.connect();
+      }
+      if (!provider?.publicKey?.toBase58) throw new Error("Failed to read wallet public key");
+      if (!provider.signMessage) throw new Error("Wallet does not support message signing");
+
+      const signerPubkey = provider.publicKey.toBase58();
+      setHolderWalletPubkey(signerPubkey);
+      setSignalSignerPubkey(signerPubkey);
+
+      const unique = Array.from(new Set(milestoneIds)).filter(Boolean);
+      if (unique.length === 0) throw new Error("Select at least one milestone");
+
+      for (const milestoneId of unique) {
+        const message = signalMessage(id, milestoneId);
+        const signed = await provider.signMessage(new TextEncoder().encode(message), "utf8");
+        const signatureBytes: Uint8Array = signed?.signature ?? signed;
+        const signature = bs58.encode(signatureBytes);
+        await jsonPost(`/api/commitments/${id}/milestones/${milestoneId}/signal`, { signerPubkey, message, signature });
+      }
+
+      toast({ kind: "success", message: `Voted on ${unique.length} milestone${unique.length === 1 ? "" : "s"}` });
+      setSelectedVoteMilestoneIds([]);
+      router.refresh();
+    } catch (e) {
+      const msg = (e as Error).message;
+      setSignalError(msg);
+      toast({ kind: "error", message: msg });
+    } finally {
+      setSignalBusy(null);
+      setHolderBusy(null);
+    }
+  }
+
   async function signalMilestone(milestoneId: string, override?: { signerPubkey: string; signature: string }) {
     setSignalError(null);
     setSignalBusy(`signal:${milestoneId}`);
@@ -996,6 +1046,127 @@ export default function CommitDashboardClient(props: Props) {
               Votes do not move funds. Admin release is required. Escrow can be underfunded, and releases will fail if escrow balance is insufficient.
             </div>
 
+            {props.status !== "failed" ? (
+              (() => {
+                const pending = (props.milestones ?? []).filter((m) => m.status === "locked" && m.completedAtUnix != null);
+                const threshold = Number(props.approvalThreshold ?? 0);
+                const showApprovals = threshold > 0;
+
+                const selectedCount = selectedVoteMilestoneIds.length;
+                const selectedSet = new Set(selectedVoteMilestoneIds);
+
+                return (
+                  <div className={styles.votePanel}>
+                    <div className={styles.votePanelHeader}>
+                      <div style={{ minWidth: 0 }}>
+                        <div className={styles.votePanelTitle}>Holder voting</div>
+                        <div className={styles.smallNote} style={{ marginTop: 6 }}>
+                          Select milestones, then sign once to approve.
+                        </div>
+                        {props.tokenMint ? (
+                          <div className={styles.smallNote} style={{ marginTop: 6 }}>
+                            Voting requires holding {props.tokenMint} with value over $20.
+                          </div>
+                        ) : null}
+                        {holderWalletPubkey ? (
+                          <div className={styles.smallNote} style={{ marginTop: 6 }}>
+                            Wallet: <span className={styles.voteMono}>{shortWallet(holderWalletPubkey)}</span>
+                          </div>
+                        ) : null}
+                      </div>
+
+                      <div className={styles.votePanelActions}>
+                        <div className={styles.voteSelectedPill}>Selected {selectedCount}</div>
+                        <button
+                          className={styles.actionBtn}
+                          type="button"
+                          onClick={() => setSelectedVoteMilestoneIds(pending.map((m) => m.id))}
+                          disabled={pending.length === 0 || holderBusy != null || signalBusy != null}
+                        >
+                          Select all
+                        </button>
+                        <button
+                          className={styles.actionBtn}
+                          type="button"
+                          onClick={() => setSelectedVoteMilestoneIds([])}
+                          disabled={selectedCount === 0 || holderBusy != null || signalBusy != null}
+                        >
+                          Clear
+                        </button>
+                        <button className={styles.actionBtn} type="button" onClick={connectHolderWallet} disabled={holderBusy != null || signalBusy != null}>
+                          {holderBusy === "connect" ? "Connecting…" : holderWalletPubkey ? "Wallet Connected" : "Connect Wallet"}
+                        </button>
+                        <button
+                          className={`${styles.actionBtn} ${styles.actionPrimary}`}
+                          type="button"
+                          onClick={() => signAndSignalSelectedMilestones(selectedVoteMilestoneIds)}
+                          disabled={selectedCount === 0 || holderBusy != null || signalBusy != null || !props.tokenMint}
+                        >
+                          {holderBusy === "sign:batch" || signalBusy === "signal:batch" ? "Submitting…" : "Sign & Vote Selected"}
+                        </button>
+                      </div>
+                    </div>
+
+                    {pending.length === 0 ? (
+                      <div className={styles.smallNote} style={{ marginTop: 12 }}>
+                        No milestones are waiting for holder approval right now.
+                      </div>
+                    ) : (
+                      <div className={styles.votePanelList}>
+                        {pending.map((m, idx) => {
+                          const approvals = Number((props.approvalCounts ?? {})[m.id] ?? 0);
+                          const pct = showApprovals ? clamp01(threshold > 0 ? approvals / threshold : 0) : 0;
+                          const checked = selectedSet.has(m.id);
+                          const label = String(m.title ?? "").trim().length ? m.title : `Milestone ${idx + 1}`;
+
+                          return (
+                            <div
+                              key={m.id}
+                              className={styles.voteRow}
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => toggleSelectedVoteMilestone(m.id)}
+                              onKeyDown={(ev) => {
+                                if (ev.key === "Enter" || ev.key === " ") {
+                                  ev.preventDefault();
+                                  toggleSelectedVoteMilestone(m.id);
+                                }
+                              }}
+                            >
+                              <input
+                                className={styles.voteCheckbox}
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() => toggleSelectedVoteMilestone(m.id)}
+                                onClick={(ev) => ev.stopPropagation()}
+                              />
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div className={styles.voteRowTop}>
+                                  <div className={styles.voteRowTitle}>{label}</div>
+                                  <div className={styles.voteRowAmount}>{fmtSol(Number(m.unlockLamports || 0))} SOL</div>
+                                </div>
+
+                                {showApprovals ? (
+                                  <div className={styles.voteProgress}>
+                                    <div className={styles.voteProgressMeta}>
+                                      ${fmtUsd(approvals)} / ${fmtUsd(threshold)}
+                                    </div>
+                                    <div className={styles.voteProgressBar} aria-hidden="true">
+                                      <div className={styles.voteProgressFill} style={{ width: `${Math.round(pct * 100)}%` }} />
+                                    </div>
+                                  </div>
+                                ) : null}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()
+            ) : null}
+
             {props.status === "failed" ? (
               <div style={{ marginTop: 14 }}>
                 <div className={styles.smallNote}>
@@ -1134,35 +1305,7 @@ export default function CommitDashboardClient(props: Props) {
                         </div>
                       ) : null}
 
-                      {canSignal ? (
-                        <div className={styles.milestoneAction}>
-                          <div className={styles.smallNote}>
-                            Token holders can vote by connecting a wallet, signing the message, and submitting the signature.
-                          </div>
-                          <div className={styles.milestoneSmallMono}>{signalMessage(id, m.id)}</div>
-                          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 10 }}>
-                            <button
-                              className={`${styles.actionBtn} ${styles.actionPrimary}`}
-                              onClick={connectHolderWallet}
-                              disabled={holderBusy != null || signalBusy != null}
-                            >
-                              {holderBusy === "connect" ? "Connecting…" : holderWalletPubkey ? "Wallet Connected" : "Connect Wallet"}
-                            </button>
-                            <button
-                              className={`${styles.actionBtn} ${styles.actionPrimary}`}
-                              onClick={() => signAndSignalMilestone(m.id)}
-                              disabled={signalBusy != null || holderBusy != null || !props.tokenMint}
-                            >
-                              {holderBusy === `sign:${m.id}` || signalBusy === `signal:${m.id}` ? "Submitting…" : "Sign & Vote"}
-                            </button>
-                          </div>
-                          {props.tokenMint ? (
-                            <div className={styles.smallNote} style={{ marginTop: 8 }}>
-                              Voting requires holding {props.tokenMint} with value over $20.
-                            </div>
-                          ) : null}
-                        </div>
-                      ) : null}
+
 
                       {canRelease ? (
                         <div className={styles.milestoneAction}>
