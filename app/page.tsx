@@ -1980,32 +1980,30 @@ export default function Home() {
                   <section className="discoverPanel">
                     <div className="discoverHeader">
                       <div className="discoverHeaderTop">
-                        <div className="discoverTitleRow">
-                          <h1 className="discoverTitle">Discover</h1>
-                          <div className="discoverHeaderStats">
-                            <span className="discoverHeaderStat">{fmtCompact(discoverStats.realCount)} projects</span>
-                            <span className="discoverHeaderStatDot">·</span>
-                            <span className="discoverHeaderStat">{fmtCompact(discoverStats.escrowedSol)} SOL locked</span>
-                          </div>
-                        </div>
-                        <div className="discoverHeaderActions">
+                        <h1 className="discoverTitle">Discover</h1>
+                        <div className="discoverHeaderRight">
                           <input
                             className="discoverSearch"
                             value={timelineQuery}
                             onChange={(e) => setTimelineQuery(e.target.value)}
-                            placeholder="Search..."
+                            placeholder="Search projects..."
                           />
                           <button className="discoverRefreshBtn" onClick={() => loadTimeline().catch((e) => setError((e as Error).message))} disabled={busy != null}>
                             ↻
                           </button>
                         </div>
                       </div>
+                      <div className="discoverHeaderStats">
+                        <span className="discoverHeaderStat"><strong>{fmtCompact(discoverStats.realCount)}</strong> projects</span>
+                        <span className="discoverHeaderStat"><strong>{fmtCompact(discoverStats.active)}</strong> active</span>
+                        <span className="discoverHeaderStat"><strong>{fmtCompact(discoverStats.escrowedSol)}</strong> SOL locked</span>
+                      </div>
                     </div>
 
                     <div className="discoverTabs">
-                      <button className={`discoverTab ${timelineFilter === "curated" ? "discoverTabActive" : ""}`} onClick={() => setTimelineFilter("curated")}>Hot</button>
-                      <button className={`discoverTab ${timelineFilter === "completed" ? "discoverTabActive" : ""}`} onClick={() => setTimelineFilter("completed")}>Shipped</button>
-                      <button className={`discoverTab ${timelineFilter === "reward" ? "discoverTabActive" : ""}`} onClick={() => setTimelineFilter("reward")}>Rewards</button>
+                      <button className={`discoverTab ${timelineFilter === "curated" ? "discoverTabActive" : ""}`} onClick={() => setTimelineFilter("curated")}>🔥 Hot</button>
+                      <button className={`discoverTab ${timelineFilter === "completed" ? "discoverTabActive" : ""}`} onClick={() => setTimelineFilter("completed")}>✓ Shipped</button>
+                      <button className={`discoverTab ${timelineFilter === "reward" ? "discoverTabActive" : ""}`} onClick={() => setTimelineFilter("reward")}>💰 Rewards</button>
                       <button className={`discoverTab ${timelineFilter === "all" ? "discoverTabActive" : ""}`} onClick={() => setTimelineFilter("all")}>All</button>
                       <div className="discoverTabSpacer" />
                       <select className="discoverSortSelect" value={timelineSort} onChange={(e) => setTimelineSort(e.target.value as any)}>
@@ -2016,18 +2014,20 @@ export default function Home() {
                     </div>
 
                     {timelineLoading ? (
-                      <div className="discoverList">
-                        {Array.from({ length: 8 }).map((_, i) => (
-                          <div key={i} className="discoverRow discoverRowDisabled">
-                            <div className="discoverRowLeft">
-                              <div className="skeleton" style={{ width: 36, height: 36, borderRadius: 8 }} />
-                              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                                <div className="skeleton skeletonLineSm" style={{ width: 100 }} />
-                                <div className="skeleton skeletonLineSm" style={{ width: 60 }} />
+                      <div className="discoverGrid">
+                        {Array.from({ length: 6 }).map((_, i) => (
+                          <div key={i} className="discoverCard discoverCardLoading">
+                            <div className="discoverCardHeader">
+                              <div className="skeleton" style={{ width: 44, height: 44, borderRadius: 10 }} />
+                              <div style={{ flex: 1 }}>
+                                <div className="skeleton skeletonLineSm" style={{ width: 120 }} />
+                                <div className="skeleton skeletonLineSm" style={{ width: 80, marginTop: 6 }} />
                               </div>
                             </div>
-                            <div className="discoverRowRight">
-                              <div className="skeleton skeletonLineSm" style={{ width: 50 }} />
+                            <div className="skeleton skeletonLineSm" style={{ width: "100%", height: 6, marginTop: 12, borderRadius: 999 }} />
+                            <div style={{ display: "flex", gap: 12, marginTop: 12 }}>
+                              <div className="skeleton skeletonLineSm" style={{ width: 60 }} />
+                              <div className="skeleton skeletonLineSm" style={{ width: 60 }} />
                             </div>
                           </div>
                         ))}
@@ -2035,10 +2035,12 @@ export default function Home() {
                     ) : discoverCards.length === 0 ? (
                       <div className="discoverEmpty">No projects found. Try a different filter.</div>
                     ) : (
-                      <div className="discoverList">
+                      <div className="discoverGrid">
                         {discoverCards.map((c) => {
                           const nowUnix = Math.floor(Date.now() / 1000);
+                          const target = Math.max(0, Number(c.targetLamports || 0));
                           const escrowed = Math.max(0, Number(c.escrowedLamports || 0));
+                          const pct = target > 0 ? clamp01(escrowed / target) : (escrowed > 0 ? 1 : 0);
 
                           const title = c.projectName || (c.projectSymbol ? `$${c.projectSymbol}` : c.tokenMint ? shortWallet(c.tokenMint) : "Project");
                           const symbol = c.projectSymbol ? `$${c.projectSymbol}` : "";
@@ -2054,18 +2056,19 @@ export default function Home() {
                           const canNavigate = !c.isMock && c.commitmentId;
                           const caKey = `${c.key}:ca`;
                           const timeAgo = c.lastActivityUnix ? unixAgoShort(c.lastActivityUnix, nowUnix) : "–";
+                          const hasSocials = c.websiteUrl || c.xUrl || c.telegramUrl || c.discordUrl;
 
                           return (
                             <div
                               key={c.key}
-                              className={`discoverRow ${!canNavigate ? "discoverRowDisabled" : ""}`}
+                              className={`discoverCard ${!canNavigate ? "discoverCardDisabled" : ""}`}
                               onClick={() => {
                                 if (!canNavigate) return;
                                 router.push(`/commit/${encodeURIComponent(c.commitmentId)}`);
                               }}
                             >
-                              <div className="discoverRowLeft">
-                                <div className="discoverRowImg">
+                              <div className="discoverCardHeader">
+                                <div className="discoverCardImg">
                                   {c.projectImageUrl ? (
                                     <img
                                       src={c.projectImageUrl}
@@ -2074,37 +2077,71 @@ export default function Home() {
                                     />
                                   ) : null}
                                 </div>
-                                <div className="discoverRowInfo">
-                                  <div className="discoverRowName">
+                                <div className="discoverCardInfo">
+                                  <div className="discoverCardName">
                                     {title}
-                                    {symbol && title !== symbol ? <span className="discoverRowSymbol">{symbol}</span> : null}
+                                    {symbol && title !== symbol ? <span className="discoverCardSymbol">{symbol}</span> : null}
                                   </div>
-                                  <div className="discoverRowMeta">
-                                    <span className={`discoverRowStatus discoverRowStatus--${statusLabel}`}>{statusLabel}</span>
-                                    <span className="discoverRowDot">·</span>
-                                    <span>{c.milestonesDone}/{c.milestonesTotal} milestones</span>
-                                    <span className="discoverRowDot">·</span>
+                                  <div className="discoverCardMeta">
+                                    <span className={`discoverCardStatus discoverCardStatus--${statusLabel}`}>{statusLabel}</span>
+                                    <span className="discoverCardDot">·</span>
                                     <span>{timeAgo}</span>
                                   </div>
                                 </div>
+                                <div className="discoverCardBadge">
+                                  <span className="discoverCardEscrowVal">{fmtSol(escrowed)}</span>
+                                  <span className="discoverCardEscrowUnit">SOL</span>
+                                </div>
                               </div>
 
-                              <div className="discoverRowRight">
-                                <div className="discoverRowEscrowed">
-                                  <span className="discoverRowEscrowedValue">{fmtSol(escrowed)}</span>
-                                  <span className="discoverRowEscrowedLabel">SOL</span>
+                              <div className="discoverCardProgress">
+                                <div className="discoverCardProgressBar">
+                                  <div className="discoverCardProgressFill" style={{ width: `${Math.round(pct * 100)}%` }} />
                                 </div>
-                                <button
-                                  className="discoverRowCopy"
-                                  type="button"
-                                  onClick={(ev) => {
-                                    ev.stopPropagation();
-                                    if (c.tokenMint) copyTimeline(c.tokenMint, caKey);
-                                  }}
-                                  title="Copy CA"
-                                >
-                                  {timelineCopied === caKey ? "✓" : "CA"}
-                                </button>
+                                <div className="discoverCardProgressLabel">
+                                  {c.milestonesDone}/{c.milestonesTotal} milestones
+                                </div>
+                              </div>
+
+                              <div className="discoverCardFoot" onClick={(ev) => ev.stopPropagation()}>
+                                <div className="discoverCardFootLeft">
+                                  {c.tokenMint ? (
+                                    <button
+                                      className="discoverCardCopy"
+                                      type="button"
+                                      onClick={() => copyTimeline(c.tokenMint, caKey)}
+                                      title="Copy contract address"
+                                    >
+                                      <span className="discoverCardCopyLabel">CA</span>
+                                      <span className="discoverCardCopyVal mono">{shortWallet(c.tokenMint)}</span>
+                                      {timelineCopied === caKey ? <span className="discoverCardCopyCheck">✓</span> : null}
+                                    </button>
+                                  ) : null}
+                                </div>
+                                {hasSocials ? (
+                                  <div className="discoverCardSocials">
+                                    {c.websiteUrl ? (
+                                      <a className="discoverCardSocial" href={c.websiteUrl} target="_blank" rel="noreferrer noopener" title="Website" onClick={(e) => e.stopPropagation()}>
+                                        <SocialIcon type="website" />
+                                      </a>
+                                    ) : null}
+                                    {c.xUrl ? (
+                                      <a className="discoverCardSocial" href={c.xUrl} target="_blank" rel="noreferrer noopener" title="X" onClick={(e) => e.stopPropagation()}>
+                                        <SocialIcon type="x" />
+                                      </a>
+                                    ) : null}
+                                    {c.telegramUrl ? (
+                                      <a className="discoverCardSocial" href={c.telegramUrl} target="_blank" rel="noreferrer noopener" title="Telegram" onClick={(e) => e.stopPropagation()}>
+                                        <SocialIcon type="telegram" />
+                                      </a>
+                                    ) : null}
+                                    {c.discordUrl ? (
+                                      <a className="discoverCardSocial" href={c.discordUrl} target="_blank" rel="noreferrer noopener" title="Discord" onClick={(e) => e.stopPropagation()}>
+                                        <SocialIcon type="discord" />
+                                      </a>
+                                    ) : null}
+                                  </div>
+                                ) : null}
                               </div>
                             </div>
                           );
