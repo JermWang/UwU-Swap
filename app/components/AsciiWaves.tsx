@@ -1,11 +1,19 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { useSearchParams } from "next/navigation";
 
 export default function AsciiWaves() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const searchParams = useSearchParams();
+  const tab = searchParams.get("tab");
+  
+  // Only show on landing page (no tab or tab=home)
+  const isLandingPage = !tab || tab === "home";
 
   useEffect(() => {
+    if (!isLandingPage) return;
+    
     const canvas = canvasRef.current;
     if (!canvas) return;
 
@@ -154,7 +162,10 @@ export default function AsciiWaves() {
       window.removeEventListener("resize", resize);
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
-  }, []);
+  }, [isLandingPage]);
+
+  // Don't render canvas at all if not on landing page
+  if (!isLandingPage) return null;
 
   return <canvas ref={canvasRef} aria-hidden className="ascii-waves" />;
 }
