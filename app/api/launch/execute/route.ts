@@ -220,10 +220,27 @@ export async function POST(req: Request) {
     creatorPubkey = treasuryPubkey;
 
     stage = "upload_metadata";
+    const PUMP_DESCRIPTION_MAX = 600;
+    const ATTRIBUTION = "Launched with CommitToShip.xyz";
+
+    const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+    const withAttribution = (raw: string): string => {
+      const trimmed = String(raw ?? "").trim();
+      const cleaned = trimmed.replace(new RegExp(`\\s*${escapeRegExp(ATTRIBUTION)}\\s*`, "gi"), "").trim();
+      const delim = cleaned.length ? "\n\n" : "";
+      const reserved = ATTRIBUTION.length + delim.length;
+      const baseMax = Math.max(0, PUMP_DESCRIPTION_MAX - reserved);
+      const base = cleaned.slice(0, baseMax).trimEnd();
+      const out = (base ? base + delim : "") + ATTRIBUTION;
+      return out.length <= PUMP_DESCRIPTION_MAX ? out : ATTRIBUTION;
+    };
+
+    const pumpDescription = withAttribution(description);
     const metadataFormData = new FormData();
     metadataFormData.append("name", name);
     metadataFormData.append("symbol", symbol);
-    metadataFormData.append("description", description);
+    metadataFormData.append("description", pumpDescription);
     metadataFormData.append("showName", "true");
     if (websiteUrl) metadataFormData.append("website", websiteUrl);
     if (xUrl) metadataFormData.append("twitter", xUrl);

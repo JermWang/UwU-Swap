@@ -222,6 +222,7 @@ export default function Home() {
     name: string;
     symbol: string;
     imageUrl: string;
+    postLaunchError?: string | null;
   } | null>(null);
 
   const [createProgress, setCreateProgress] = useState<CreateProgressStep[] | null>(null);
@@ -1463,6 +1464,7 @@ export default function Home() {
               tokenMint: string;
               launchTxSig: string;
               creatorWallet: string;
+              postLaunchError?: string | null;
             };
 
         const executeOnce = async () => apiPost<LaunchExecuteResponse>("/api/launch/execute", launchBody);
@@ -1538,6 +1540,7 @@ export default function Home() {
           name: draftName.trim(),
           symbol: draftSymbol.trim(),
           imageUrl: draftImageUrl,
+          postLaunchError: (launched as any)?.postLaunchError ?? null,
         });
         return;
       }
@@ -2545,6 +2548,16 @@ export default function Home() {
             <p className="launchSuccessSubtitle">
               Your token is now live on pump.fun with auto-locked creator fees.
             </p>
+
+            {launchSuccess.postLaunchError ? (
+              <div
+                className="createInfoBox"
+                style={{ marginTop: 12, borderColor: "rgba(251, 191, 36, 0.35)", background: "rgba(251, 191, 36, 0.08)" }}
+              >
+                <div className="createInfoTitle" style={{ color: "rgba(251, 191, 36, 0.9)" }}>Finalization warning</div>
+                <div className="createInfoText">Saved on-chain, but post-launch steps failed: {launchSuccess.postLaunchError}</div>
+              </div>
+            ) : null}
 
             <div className="launchSuccessDetails">
               <div className="launchSuccessDetail">

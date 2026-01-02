@@ -15,6 +15,7 @@ import { checkRateLimit } from "../../../lib/rateLimit";
 import { getBalanceLamports, getChainUnixTime, getConnection } from "../../../lib/solana";
 import { getSafeErrorMessage } from "../../../lib/safeError";
 import { getProjectProfile } from "../../../lib/projectProfilesStore";
+import { getLaunchTreasuryWallet } from "../../../lib/launchTreasuryStore";
 
 export const runtime = "nodejs";
 
@@ -42,9 +43,22 @@ export async function GET(_req: Request, ctx: { params: { wallet: string } }) {
       return NextResponse.json({ error: "Invalid wallet address" }, { status: 400 });
     }
 
+    let treasuryWallet: string | null = null;
+    try {
+      const treasury = await getLaunchTreasuryWallet(walletPubkey);
+      treasuryWallet = treasury?.treasuryWallet ?? null;
+    } catch {
+      treasuryWallet = null;
+    }
+
     const allCommitments = await listCommitments();
     const creatorCommitments = allCommitments.filter(
-      (c) => c.creatorPubkey === walletPubkey || c.authority === walletPubkey
+      (c) =>
+        c.creatorPubkey === walletPubkey ||
+        c.authority === walletPubkey ||
+        c.destinationOnFail === walletPubkey ||
+        (treasuryWallet ? c.authority === treasuryWallet : false) ||
+        (treasuryWallet ? c.destinationOnFail === treasuryWallet : false)
     );
 
     if (creatorCommitments.length === 0) {
