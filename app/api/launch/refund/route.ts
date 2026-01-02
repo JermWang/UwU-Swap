@@ -7,7 +7,7 @@ import { getSafeErrorMessage } from "../../../lib/safeError";
 import { getAdminCookieName, getAdminSessionWallet, getAllowedAdminWallets, verifyAdminOrigin } from "../../../lib/adminSession";
 import { getConnection } from "../../../lib/solana";
 import { getPool, hasDatabase } from "../../../lib/db";
-import { privyRefundWalletToDestination } from "../../../lib/privy";
+import { privyFindSolanaWalletIdByAddress, privyRefundWalletToDestination } from "../../../lib/privy";
 
 export const runtime = "nodejs";
 
@@ -127,41 +127,45 @@ export async function POST(req: Request) {
       payerWallet = parties.source;
       creatorWallet = parties.destination;
 
-      if (!hasDatabase()) {
-        return NextResponse.json({ error: "DATABASE_URL is required to resolve walletId from fundingSig" }, { status: 400 });
-      }
-
-      const pool = getPool();
-      const { rows } = await pool.query(
-        `
-        select
-          fields->>'walletId' as wallet_id,
-          fields->>'treasuryWallet' as treasury_wallet,
-          fields->>'payerWallet' as payer_wallet,
-          ts_unix
-        from public.audit_logs
-        where event = 'launch_prepare'
-          and fields->>'treasuryWallet' = $1
-          and fields->>'payerWallet' = $2
-        order by ts_unix desc
-        limit 1
-        `,
-        [creatorWallet, payerWallet]
-      );
-
-      const row = rows?.[0];
-      walletId = String(row?.wallet_id ?? "").trim();
-
-      if (!walletId) {
-        return NextResponse.json(
-          {
-            error: "Could not resolve walletId for this funding transaction. It may predate the new flow or logs are missing.",
-            creatorWallet,
-            payerWallet,
-          },
-          { status: 404 }
+      if (hasDatabase()) {
+        const pool = getPool();
+        const { rows } = await pool.query(
+          `
+          select
+            fields->>'walletId' as wallet_id,
+            fields->>'treasuryWallet' as treasury_wallet,
+            fields->>'payerWallet' as payer_wallet,
+            ts_unix
+          from public.audit_logs
+          where event = 'launch_prepare'
+            and fields->>'treasuryWallet' = $1
+            and fields->>'payerWallet' = $2
+          order by ts_unix desc
+          limit 1
+          `,
+          [creatorWallet, payerWallet]
         );
+
+        const row = rows?.[0];
+        walletId = String(row?.wallet_id ?? "").trim();
       }
+    }
+
+    if (!walletId && creatorWallet) {
+      const wid = await privyFindSolanaWalletIdByAddress({ address: creatorWallet, maxPages: 20 });
+      walletId = wid || "";
+    }
+
+    if (!walletId || !creatorWallet || !payerWallet) {
+      return NextResponse.json(
+        {
+          error: "Missing required fields after resolution",
+          walletId: walletId || null,
+          creatorWallet: creatorWallet || null,
+          payerWallet: payerWallet || null,
+        },
+        { status: 400 }
+      );
     }
 
     const fromPubkey = new PublicKey(creatorWallet);

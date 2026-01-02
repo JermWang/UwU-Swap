@@ -497,7 +497,7 @@ export async function privyRefundWalletToDestination(input: {
     const balance = await withRetry(() => connection.getBalance(input.fromPubkey, "confirmed"));
     const refundableLamports = Math.max(0, balance - keepLamports);
     if (refundableLamports <= 0) {
-      return { ok: false, error: "No refundable balance" };
+      return { ok: false, error: `No refundable balance (balance=${balance}, keepLamports=${keepLamports})` };
     }
 
     const tx = new Transaction();
@@ -561,7 +561,7 @@ export async function privyRefundWalletToFeePayer(input: {
     const balance = await withRetry(() => connection.getBalance(input.fromPubkey, "confirmed"));
     const refundableLamports = Math.max(0, balance - keepLamports);
     if (refundableLamports <= 0) {
-      return { ok: false, error: "No refundable balance" };
+      return { ok: false, error: `No refundable balance (balance=${balance}, keepLamports=${keepLamports})` };
     }
 
     const tx = new Transaction();
