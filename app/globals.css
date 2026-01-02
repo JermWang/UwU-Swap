@@ -1295,7 +1295,7 @@ body[data-skin="landing"] .landingHeroBeta {
   position: absolute;
   top: 0;
   right: 0;
-  transform: translate(72%, -62%);
+  transform: translate(18%, -28%);
   font-size: 9px;
   font-weight: 900;
   letter-spacing: 0.22em;
@@ -6449,6 +6449,7 @@ body[data-skin="app"] .commitComplianceFill {
 
   .globalNavLinks {
     gap: 4px;
+    flex-wrap: nowrap;
   }
 
   .globalNavLinksDesktop {
@@ -6519,6 +6520,14 @@ body[data-skin="app"] .commitComplianceFill {
     padding: 8px 10px;
   }
 
+  .globalNavLinksMobile .globalNavIconBtn,
+  .globalNavLinksMobile .wallet-adapter-button {
+    min-height: 38px;
+    height: 38px;
+    display: inline-flex;
+    align-items: center;
+  }
+
   .globalNavToken {
     padding: 7px 10px;
     font-size: 11px;
@@ -6586,7 +6595,7 @@ body[data-skin="app"] .commitComplianceFill {
 
   .globalNavInner {
     padding: 12px 14px;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
   }
 
   .globalNavLeft {
@@ -6595,12 +6604,12 @@ body[data-skin="app"] .commitComplianceFill {
   }
 
   .globalNavLinks {
-    width: 100%;
+    width: auto;
     justify-content: flex-end;
-    order: 3;
-    margin-top: 8px;
+    order: 0;
+    margin-top: 0;
     display: inline-flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
   }
 
   .globalNav .globalNavToken,
