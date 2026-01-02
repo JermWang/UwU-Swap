@@ -128,6 +128,20 @@ function extractSystemTransfers(parsedTx: any): { source: string; destination: s
   return out;
 }
 
+function extractInvokedPrograms(parsedTx: any): string[] {
+  const logs = parsedTx?.meta?.logMessages;
+  if (!Array.isArray(logs) || logs.length === 0) return [];
+
+  const out = new Set<string>();
+  const re = /Program\s+([1-9A-HJ-NP-Za-km-z]{32,44})\s+invoke/;
+  for (const line of logs) {
+    const s = String(line);
+    const m = s.match(re);
+    if (m && m[1]) out.add(m[1]);
+  }
+  return Array.from(out);
+}
+
 export async function POST(req: Request) {
   try {
     const rl = await checkRateLimit(req, { keyPrefix: "launch:trace", limit: 20, windowSeconds: 60 });
@@ -169,6 +183,8 @@ export async function POST(req: Request) {
       const deltaLamports = parsed ? getAccountDeltaLamports(parsed, pubkey.toBase58()) : null;
       const pumpMints = parsed ? extractPumpMints(parsed, pumpProgramId) : [];
       const systemTransfers = parsed ? extractSystemTransfers(parsed) : [];
+      const invokedPrograms = parsed ? extractInvokedPrograms(parsed) : [];
+      const invokesPump = invokedPrograms.includes(pumpProgramId);
       const fee = parsed?.meta?.fee != null ? Number(parsed.meta.fee) : null;
 
       out.push({
@@ -180,6 +196,8 @@ export async function POST(req: Request) {
         deltaLamports,
         pumpMints,
         systemTransfers,
+        invokedPrograms,
+        invokesPump,
       });
     }
 
