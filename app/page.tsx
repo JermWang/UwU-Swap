@@ -1399,29 +1399,37 @@ export default function Home() {
         const payerWallet = pk;
         const prepare = await apiPost<{
           walletId: string;
-          creatorWallet: string;
+          treasuryWallet: string;
           payerWallet: string;
           requiredLamports: number;
-          txBase64: string;
+          currentLamports: number;
+          missingLamports: number;
+          needsFunding: boolean;
+          txBase64: string | null;
         }>("/api/launch/prepare", {
           payerWallet,
           devBuySol: 0.01,
         });
 
-        const txBase64 = String(prepare?.txBase64 ?? "");
-        if (!txBase64) throw new Error("Server did not return a funding transaction");
+        let fundSig = "";
+        if (prepare.needsFunding) {
+          const txBase64 = String(prepare?.txBase64 ?? "");
+          if (!txBase64) throw new Error("Server did not return a funding transaction");
 
-        const fundTx = Transaction.from(base64ToBytes(txBase64));
-        const fundSent = await provider.signAndSendTransaction(fundTx);
-        const fundSig = String(fundSent?.signature ?? fundSent);
-        if (!fundSig) throw new Error("Funding transaction failed to return a signature");
+          const fundTx = Transaction.from(base64ToBytes(txBase64));
+          const fundSent = await provider.signAndSendTransaction(fundTx);
+          fundSig = String(fundSent?.signature ?? fundSent);
+          if (!fundSig) throw new Error("Funding transaction failed to return a signature");
 
-        setStep("fund", { status: "done" });
+          setStep("fund", { status: "done" });
+        } else {
+          setStep("fund", { status: "done", detail: "No top-up needed" });
+        }
         setStep("launch", { status: "active" });
 
         const launchBody = {
           walletId: prepare.walletId,
-          creatorWallet: prepare.creatorWallet,
+          treasuryWallet: prepare.treasuryWallet,
           payerWallet: prepare.payerWallet,
           name: draftName.trim(),
           symbol: draftSymbol.trim(),
@@ -1435,7 +1443,7 @@ export default function Home() {
           telegramUrl: draftTelegramUrl.trim(),
           discordUrl: draftDiscordUrl.trim(),
           devBuySol: 0.01,
-          fundingSig: fundSig,
+          fundingSig: fundSig || undefined,
         };
 
         const launched = await apiPost<{ commitmentId: string; tokenMint: string; launchTxSig: string }>("/api/launch/execute", launchBody);

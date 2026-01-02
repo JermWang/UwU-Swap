@@ -136,12 +136,12 @@ export async function POST(req: Request) {
         `
         select
           fields->>'walletId' as wallet_id,
-          fields->>'creatorWallet' as creator_wallet,
+          fields->>'treasuryWallet' as treasury_wallet,
           fields->>'payerWallet' as payer_wallet,
           ts_unix
         from public.audit_logs
         where event = 'launch_prepare'
-          and fields->>'creatorWallet' = $1
+          and fields->>'treasuryWallet' = $1
           and fields->>'payerWallet' = $2
         order by ts_unix desc
         limit 1

@@ -52,8 +52,33 @@ export async function POST(req: Request) {
 
     const keepLamports = body?.keepLamports != null ? Number(body.keepLamports) : 10_000;
 
-    const walletId = typeof body?.walletId === "string" ? body.walletId.trim() : "";
+    let walletId = typeof body?.walletId === "string" ? body.walletId.trim() : "";
     const creatorWallet = typeof body?.creatorWallet === "string" ? body.creatorWallet.trim() : "";
+
+    if (!walletId && creatorWallet) {
+      if (!hasDatabase()) {
+        return NextResponse.json({ error: "DATABASE_URL is required to resolve walletId from creatorWallet" }, { status: 400 });
+      }
+      const pool = getPool();
+      const { rows } = await pool.query(
+        `
+        select
+          f.fields->>'walletId' as wallet_id,
+          f.ts_unix
+        from public.audit_logs f
+        where f.fields->>'creatorWallet' = $1
+          and f.fields->>'walletId' is not null
+        order by f.ts_unix desc
+        limit 1
+        `,
+        [creatorWallet]
+      );
+      const row = rows?.[0];
+      walletId = String(row?.wallet_id ?? "").trim();
+      if (!walletId) {
+        return NextResponse.json({ error: "Could not resolve walletId for creatorWallet" }, { status: 404 });
+      }
+    }
 
     if (walletId && creatorWallet) {
       const fromPubkey = new PublicKey(creatorWallet);

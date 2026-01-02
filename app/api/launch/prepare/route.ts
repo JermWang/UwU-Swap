@@ -5,7 +5,7 @@ import { Buffer } from "buffer";
 import { checkRateLimit } from "../../../lib/rateLimit";
 import { getSafeErrorMessage } from "../../../lib/safeError";
 import { getConnection } from "../../../lib/solana";
-import { privyCreateSolanaWallet } from "../../../lib/privy";
+import { getOrCreateLaunchTreasuryWallet } from "../../../lib/launchTreasuryStore";
 import { auditLog } from "../../../lib/auditLog";
 import { getAdminCookieName, getAdminSessionWallet, getAllowedAdminWallets, verifyAdminOrigin } from "../../../lib/adminSession";
 
@@ -92,49 +92,70 @@ export async function POST(req: Request) {
     } catch {
       return NextResponse.json({ error: "Invalid payer wallet address" }, { status: 400 });
     }
-    const { walletId, address: creatorWallet } = await privyCreateSolanaWallet();
-    const creatorPubkey = new PublicKey(creatorWallet);
+    const { record: treasury, created } = await getOrCreateLaunchTreasuryWallet({ payerWallet: payerPubkey.toBase58() });
+    const walletId = treasury.walletId;
+    const treasuryWallet = treasury.treasuryWallet;
+    const treasuryPubkey = new PublicKey(treasuryWallet);
 
     const devBuyLamports = Math.floor(devBuySol * 1_000_000_000);
     const requiredLamports = devBuyLamports + 10_000_000;
 
     const connection = getConnection();
-    const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("processed");
+    const currentLamports = await connection.getBalance(treasuryPubkey, "confirmed");
+    const missingLamports = Math.max(0, requiredLamports - currentLamports);
+    const needsFunding = missingLamports > 0;
 
-    const tx = new Transaction();
-    tx.feePayer = payerPubkey;
-    tx.recentBlockhash = blockhash;
-    tx.lastValidBlockHeight = lastValidBlockHeight;
-    tx.add(
-      SystemProgram.transfer({
-        fromPubkey: payerPubkey,
-        toPubkey: creatorPubkey,
-        lamports: requiredLamports,
-      })
-    );
+    let txBase64: string | null = null;
+    let blockhash = "";
+    let lastValidBlockHeight = 0;
 
-    const txBytes = tx.serialize({ requireAllSignatures: false, verifySignatures: false });
-    const txBase64 = Buffer.from(Uint8Array.from(txBytes)).toString("base64");
+    if (needsFunding) {
+      const latest = await connection.getLatestBlockhash("confirmed");
+      blockhash = latest.blockhash;
+      lastValidBlockHeight = latest.lastValidBlockHeight;
+
+      const tx = new Transaction();
+      tx.feePayer = payerPubkey;
+      tx.recentBlockhash = blockhash;
+      tx.lastValidBlockHeight = lastValidBlockHeight;
+      tx.add(
+        SystemProgram.transfer({
+          fromPubkey: payerPubkey,
+          toPubkey: treasuryPubkey,
+          lamports: missingLamports,
+        })
+      );
+
+      const txBytes = tx.serialize({ requireAllSignatures: false, verifySignatures: false });
+      txBase64 = Buffer.from(Uint8Array.from(txBytes)).toString("base64");
+    }
 
     await auditLog("launch_prepare", {
       walletId,
-      creatorWallet,
+      treasuryWallet,
       payerWallet: payerPubkey.toBase58(),
       requiredLamports,
+      currentLamports,
+      missingLamports,
+      needsFunding,
+      createdTreasury: created,
       devBuySol,
     });
 
     return NextResponse.json({
       ok: true,
       walletId,
-      creatorWallet,
+      treasuryWallet,
       payerWallet: payerPubkey.toBase58(),
       requiredLamports,
+      currentLamports,
+      missingLamports,
+      needsFunding,
       txBase64,
-      txFormat: "base64",
-      txType: "fund_launch_wallet",
-      blockhash,
-      lastValidBlockHeight,
+      txFormat: txBase64 ? "base64" : null,
+      txType: txBase64 ? "fund_treasury_wallet" : null,
+      blockhash: blockhash || null,
+      lastValidBlockHeight: lastValidBlockHeight || null,
     });
   } catch (e) {
     await auditLog("launch_prepare_error", { error: getSafeErrorMessage(e) });

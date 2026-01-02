@@ -5,7 +5,12 @@ import crypto from "crypto";
 import { checkRateLimit } from "../../../lib/rateLimit";
 import { getSafeErrorMessage } from "../../../lib/safeError";
 import { confirmTransactionSignature, getConnection } from "../../../lib/solana";
-import { privyRefundWalletToDestination, privySignAndSendSolanaTransaction } from "../../../lib/privy";
+import {
+  privyCreateSolanaWallet,
+  privyRefundWalletToDestination,
+  privySignAndSendSolanaTransaction,
+  privyTransferLamportsFromWallet,
+} from "../../../lib/privy";
 import { buildUnsignedPumpfunCreateV2Tx } from "../../../lib/pumpfun";
 import { createRewardCommitmentRecord, insertCommitment } from "../../../lib/escrowStore";
 import { upsertProjectProfile } from "../../../lib/projectProfilesStore";
@@ -52,6 +57,9 @@ export async function OPTIONS(req: Request) {
 export async function POST(req: Request) {
   let stage = "init";
   let walletId = "";
+  let treasuryWallet = "";
+  let treasuryPubkey: PublicKey | null = null;
+  let launchWalletId = "";
   let creatorWallet = "";
   let payerWallet = "";
   let commitmentId = "";
@@ -60,6 +68,7 @@ export async function POST(req: Request) {
   let payerPubkey: PublicKey | null = null;
   let funded = false;
   let fundedLamports = 0;
+  let fundSignature = "";
 
   try {
     const rl = await checkRateLimit(req, { keyPrefix: "launch:execute", limit: 10, windowSeconds: 60 });
@@ -99,8 +108,11 @@ export async function POST(req: Request) {
     const body = (await req.json()) as any;
 
     walletId = typeof body.walletId === "string" ? body.walletId.trim() : "";
+    treasuryWallet = typeof body.treasuryWallet === "string" ? body.treasuryWallet.trim() : "";
     creatorWallet = typeof body.creatorWallet === "string" ? body.creatorWallet.trim() : "";
     payerWallet = typeof body.payerWallet === "string" ? body.payerWallet.trim() : "";
+
+    if (!treasuryWallet) treasuryWallet = creatorWallet;
 
     const name = typeof body.name === "string" ? body.name.trim() : "";
     const symbol = typeof body.symbol === "string" ? body.symbol.trim() : "";
@@ -120,7 +132,7 @@ export async function POST(req: Request) {
     const requiredLamports = devBuyLamports + 10_000_000;
 
     if (!walletId) return NextResponse.json({ error: "walletId is required" }, { status: 400 });
-    if (!creatorWallet) return NextResponse.json({ error: "creatorWallet is required" }, { status: 400 });
+    if (!treasuryWallet) return NextResponse.json({ error: "treasuryWallet is required" }, { status: 400 });
     if (!payerWallet) return NextResponse.json({ error: "payerWallet is required" }, { status: 400 });
 
     if (!name) return NextResponse.json({ error: "Token name is required" }, { status: 400 });
@@ -142,26 +154,46 @@ export async function POST(req: Request) {
     }
 
     try {
-      creatorPubkey = new PublicKey(creatorWallet);
+      treasuryPubkey = new PublicKey(treasuryWallet);
     } catch {
-      return NextResponse.json({ error: "Invalid creator wallet address" }, { status: 400 });
+      return NextResponse.json({ error: "Invalid treasury wallet address" }, { status: 400 });
     }
 
-    stage = "verify_funding";
+    stage = "verify_treasury_balance";
     const connection = getConnection();
-    const balance = await connection.getBalance(creatorPubkey, "confirmed");
-    if (balance < requiredLamports) {
+    const treasuryBalance = await connection.getBalance(treasuryPubkey, "confirmed");
+    if (treasuryBalance < requiredLamports + 50_000) {
       return NextResponse.json(
         {
-          error: `Launch wallet not funded yet (${balance} lamports, need ${requiredLamports}).`,
+          error: `Treasury wallet has insufficient balance (${treasuryBalance} lamports, need ~${requiredLamports + 50_000}). Re-run prepare to top up.`,
           stage,
           walletId,
-          creatorWallet,
+          treasuryWallet,
           payerWallet,
         },
         { status: 409 }
       );
     }
+
+    stage = "create_launch_wallet";
+    const created = await privyCreateSolanaWallet();
+    launchWalletId = created.walletId;
+    creatorWallet = created.address;
+    creatorPubkey = new PublicKey(creatorWallet);
+
+    stage = "fund_launch_wallet";
+    const fund = await privyTransferLamportsFromWallet({
+      walletId,
+      fromPubkey: treasuryPubkey,
+      toPubkey: creatorPubkey,
+      lamports: requiredLamports,
+      caip2: SOLANA_CAIP2,
+    });
+    if (!fund.ok) {
+      throw Object.assign(new Error(fund.error || "Failed to fund launch wallet from treasury"), { status: 500 });
+    }
+    fundSignature = fund.signature;
+
     funded = true;
     fundedLamports = requiredLamports;
 
@@ -226,18 +258,22 @@ export async function POST(req: Request) {
     await auditLog("launch_attempt", {
       commitmentId,
       tokenMint: tokenMintB58,
-      creatorWallet,
+      payerWallet,
       payoutWallet: payoutPubkey.toBase58(),
-      walletId,
       name,
       symbol,
-      payerWallet,
+      treasuryWallet,
+      treasuryWalletId: walletId,
+      launchCreatorWallet: creatorWallet,
+      launchWalletId,
+      requiredLamports,
+      fundSignature,
     });
 
     stage = "send_tx";
     const serializeForPrivy = () => tx.serialize({ requireAllSignatures: false }).toString("base64");
     try {
-      const sent = await privySignAndSendSolanaTransaction({ walletId, caip2: SOLANA_CAIP2, transactionBase64: serializeForPrivy() });
+      const sent = await privySignAndSendSolanaTransaction({ walletId: launchWalletId, caip2: SOLANA_CAIP2, transactionBase64: serializeForPrivy() });
       launchTxSig = sent.signature;
     } catch (sendErr) {
       const msg = getSafeErrorMessage(sendErr);
@@ -246,7 +282,7 @@ export async function POST(req: Request) {
         tx.recentBlockhash = retryLatest.blockhash;
         (tx as any).lastValidBlockHeight = retryLatest.lastValidBlockHeight;
         tx.partialSign(mintKeypair);
-        const sent = await privySignAndSendSolanaTransaction({ walletId, caip2: SOLANA_CAIP2, transactionBase64: serializeForPrivy() });
+        const sent = await privySignAndSendSolanaTransaction({ walletId: launchWalletId, caip2: SOLANA_CAIP2, transactionBase64: serializeForPrivy() });
         launchTxSig = sent.signature;
       } else {
         throw sendErr;
@@ -261,7 +297,15 @@ export async function POST(req: Request) {
       lastValidBlockHeight: Number((tx as any).lastValidBlockHeight ?? 0),
     });
 
-    await auditLog("launch_onchain_success", { commitmentId, tokenMint: tokenMintB58, launchTxSig });
+    await auditLog("launch_onchain_success", {
+      commitmentId,
+      tokenMint: tokenMintB58,
+      launchTxSig,
+      treasuryWallet,
+      treasuryWalletId: walletId,
+      launchCreatorWallet: creatorWallet,
+      launchWalletId,
+    });
 
     const escrowPubkey = creatorPubkey.toBase58();
 
@@ -270,7 +314,7 @@ export async function POST(req: Request) {
       statement: statement || `Lock creator fees for ${name}. Ship milestones, release on-chain.`,
       creatorPubkey: payoutPubkey.toBase58(),
       escrowPubkey,
-      escrowSecretKeyB58: `privy:${walletId}`,
+      escrowSecretKeyB58: `privy:${launchWalletId}`,
       milestones: [],
       tokenMint: mintKeypair.publicKey.toBase58(),
       creatorFeeMode: "managed",
@@ -305,7 +349,19 @@ export async function POST(req: Request) {
       await auditLog("launch_profile_save_error", { commitmentId, tokenMint: mintKeypair.publicKey.toBase58(), error: getSafeErrorMessage(profileErr) });
     }
 
-    await auditLog("launch_success", { commitmentId, tokenMint: mintKeypair.publicKey.toBase58(), creatorWallet, payerWallet, launchTxSig });
+    await auditLog("launch_success", {
+      commitmentId,
+      tokenMint: mintKeypair.publicKey.toBase58(),
+      payerWallet,
+      payoutWallet: payoutPubkey.toBase58(),
+      treasuryWallet,
+      treasuryWalletId: walletId,
+      launchCreatorWallet: creatorWallet,
+      launchWalletId,
+      requiredLamports,
+      fundSignature,
+      launchTxSig,
+    });
 
     return NextResponse.json({
       ok: true,
@@ -313,6 +369,8 @@ export async function POST(req: Request) {
       tokenMint: mintKeypair.publicKey.toBase58(),
       creatorWallet,
       payerWallet,
+      treasuryWallet,
+      launchWalletId,
       bondingCurve: bondingCurve.toBase58(),
       launchTxSig,
       metadataUri,
@@ -322,21 +380,23 @@ export async function POST(req: Request) {
     const msg = getSafeErrorMessage(e);
     const status = Number((e as any)?.status ?? 500);
 
-    if (funded && walletId && creatorPubkey && payerPubkey && !launchTxSig) {
+    if (funded && launchWalletId && creatorPubkey && treasuryPubkey && !launchTxSig) {
       try {
         const refund = await privyRefundWalletToDestination({
-          walletId,
+          walletId: launchWalletId,
           fromPubkey: creatorPubkey,
-          toPubkey: payerPubkey,
+          toPubkey: treasuryPubkey,
           caip2: SOLANA_CAIP2,
           keepLamports: 10_000,
         });
         await auditLog("launch_refund_attempt", {
           commitmentId,
-          walletId,
-          creatorWallet,
+          treasuryWalletId: walletId,
+          launchWalletId,
+          treasuryWallet,
+          launchCreatorWallet: creatorWallet,
           fundedLamports,
-          payerWallet: payerPubkey.toBase58(),
+          payerWallet,
           ok: refund.ok,
           refundSignature: refund.ok ? refund.signature : undefined,
           refundedLamports: refund.ok ? refund.refundedLamports : undefined,
@@ -345,10 +405,12 @@ export async function POST(req: Request) {
       } catch (refundErr) {
         await auditLog("launch_refund_attempt", {
           commitmentId,
-          walletId,
-          creatorWallet,
+          treasuryWalletId: walletId,
+          launchWalletId,
+          treasuryWallet,
+          launchCreatorWallet: creatorWallet,
           fundedLamports,
-          payerWallet: payerWallet,
+          payerWallet,
           ok: false,
           refundError: getSafeErrorMessage(refundErr),
         });
