@@ -948,7 +948,7 @@ export default function Home() {
     events7d: number;
   };
 
-  const discoverCards: DiscoverCard[] = useMemo(() => {
+  const discoverLiveCards: DiscoverCard[] = useMemo(() => {
     const nowUnix = Math.floor(Date.now() / 1000);
 
     const cards: DiscoverCard[] = [];
@@ -1055,11 +1055,13 @@ export default function Home() {
       sorted.sort((a, b) => b.lastActivityUnix - a.lastActivityUnix || b.key.localeCompare(a.key));
     }
 
-    const minCards = 6;
-    const cardsWithImages = sorted.filter((c) => c.projectImageUrl && c.projectName);
-    const need = Math.max(0, minCards - cardsWithImages.length);
+    return sorted;
+  }, [projectsByMint, timelineCommitments, timelineEventsByCommitmentId, timelineFilter, timelineKindFilter, timelineQuery, timelineSort, timelineStatusFilter]);
 
-    const mock: DiscoverCard[] = [
+  const discoverDemoCards: DiscoverCard[] = useMemo(() => {
+    const nowUnix = Math.floor(Date.now() / 1000);
+
+    return [
       {
         key: "mock:nekoai",
         isMock: true,
@@ -1211,25 +1213,7 @@ export default function Home() {
         events7d: 67,
       },
     ];
-
-    const fill: DiscoverCard[] = [];
-    for (let i = 0; i < need; i++) {
-      const base = mock[i % mock.length];
-      fill.push({
-        ...base,
-        key: `${base.key}:${i}`,
-        lastActivityUnix: base.lastActivityUnix - i * 2700,
-        escrowedLamports: Math.max(0, base.escrowedLamports - i * 250_000_000),
-        events24h: Math.max(0, base.events24h - (i % 3)),
-        events7d: Math.max(0, base.events7d - (i % 5)),
-      });
-    }
-
-    // Only show real cards that have proper project info (images and names)
-    // Hide incomplete real cards and fill with mock data instead
-    const withImages = sorted.filter((c) => c.projectImageUrl && c.projectName);
-    return [...withImages, ...fill];
-  }, [projectsByMint, timelineCommitments, timelineEventsByCommitmentId, timelineFilter, timelineKindFilter, timelineQuery, timelineSort, timelineStatusFilter]);
+  }, []);
 
   function humanTime(tsUnix: number): string {
     try {
@@ -2376,11 +2360,13 @@ export default function Home() {
                           </div>
                         ))}
                       </div>
-                    ) : discoverCards.length === 0 ? (
-                      <div className="discoverEmpty">No projects found. Try a different filter.</div>
                     ) : (
-                      <div className="discoverGrid">
-                        {discoverCards.map((c) => {
+                      <>
+                        {discoverLiveCards.length === 0 ? (
+                          <div className="discoverEmpty">No projects found. Try a different filter.</div>
+                        ) : (
+                          <div className="discoverGrid">
+                            {discoverLiveCards.map((c) => {
                           const nowUnix = Math.floor(Date.now() / 1000);
                           const target = Math.max(0, Number(c.targetLamports || 0));
                           const escrowed = Math.max(0, Number(c.escrowedLamports || 0));
@@ -2519,8 +2505,160 @@ export default function Home() {
                               </div>
                             </div>
                           );
-                        })}
-                      </div>
+                            })}
+                          </div>
+                        )}
+
+                        {timelineQuery.trim().length === 0 ? (
+                          <>
+                            <div style={{ marginTop: 18, marginBottom: 10, opacity: 0.85, fontSize: 13, letterSpacing: 0.2 }}>
+                              Demo examples
+                            </div>
+                            <div className="discoverGrid">
+                              {discoverDemoCards.map((c) => {
+                                const nowUnix = Math.floor(Date.now() / 1000);
+                                const target = Math.max(0, Number(c.targetLamports || 0));
+                                const escrowed = Math.max(0, Number(c.escrowedLamports || 0));
+                                const pct = target > 0 ? clamp01(escrowed / target) : (escrowed > 0 ? 1 : 0);
+
+                                const title = c.projectName || (c.projectSymbol ? `$${c.projectSymbol}` : c.tokenMint ? shortWallet(c.tokenMint) : "Project");
+                                const symbol = c.projectSymbol ? `$${c.projectSymbol}` : "";
+
+                                const statusLower = String(c.status ?? "").toLowerCase();
+                                const statusLabel =
+                                  statusLower.includes("resolved_success") || statusLower.includes("completed")
+                                    ? "shipped"
+                                    : statusLower.includes("failed") || statusLower.includes("resolved_failure")
+                                      ? "failed"
+                                      : "active";
+
+                                const canNavigate = c.commitmentId || c.isMock;
+                                const caKey = `${c.key}:ca`;
+                                const timeAgo = c.lastActivityUnix ? unixAgoShort(c.lastActivityUnix, nowUnix) : "–";
+
+                                return (
+                                  <div
+                                    key={c.key}
+                                    className={`discoverCard ${!canNavigate ? "discoverCardDisabled" : ""}`}
+                                    onClick={() => {
+                                      if (!canNavigate) return;
+                                      if (c.isMock) {
+                                        const mockId = c.key.replace("mock:", "").split(":")[0];
+                                        router.push(`/commit/mock-${mockId}`);
+                                      } else {
+                                        router.push(`/commit/${encodeURIComponent(c.commitmentId)}`);
+                                      }
+                                    }}
+                                  >
+                                    <div className="discoverCardHeader">
+                                      <div className="discoverCardImg">
+                                        {c.projectImageUrl ? (
+                                          <img
+                                            src={c.projectImageUrl}
+                                            alt=""
+                                            onError={(ev) => { (ev.currentTarget as HTMLImageElement).style.display = "none"; }}
+                                          />
+                                        ) : null}
+                                      </div>
+                                      <div className="discoverCardInfo">
+                                        <div className="discoverCardName">
+                                          {title}
+                                          {symbol && title !== symbol ? <span className="discoverCardSymbol">{symbol}</span> : null}
+                                        </div>
+                                        <div className="discoverCardMeta">
+                                          <span className={`discoverCardStatus discoverCardStatus--${statusLabel}`}>{statusLabel}</span>
+                                          <span className="discoverCardDot">·</span>
+                                          <span>{timeAgo}</span>
+                                        </div>
+                                      </div>
+                                      <div className="discoverCardBadge">
+                                        <span className="discoverCardEscrowVal">{fmtSol(escrowed)}</span>
+                                        <span className="discoverCardEscrowUnit">SOL</span>
+                                      </div>
+                                    </div>
+
+                                    {c.projectDesc ? (
+                                      <div className="discoverCardDesc">{c.projectDesc}</div>
+                                    ) : null}
+
+                                    <div className="discoverCardStats">
+                                      <div className="discoverCardStat">
+                                        <span className="discoverCardStatLabel">Escrowed</span>
+                                        <span className="discoverCardStatValue discoverCardStatValueGreen">{fmtSol(escrowed)} SOL</span>
+                                      </div>
+                                      <div className="discoverCardStat">
+                                        <span className="discoverCardStatLabel">Progress</span>
+                                        <span className="discoverCardStatValue">{c.milestonesDone}/{c.milestonesTotal}</span>
+                                      </div>
+                                    </div>
+
+                                    <div className="discoverCardProgress">
+                                      <div className="discoverCardProgressBar">
+                                        <div className="discoverCardProgressFill" style={{ width: `${Math.round(pct * 100)}%` }} />
+                                      </div>
+                                    </div>
+
+                                    <div className="discoverCardFoot" onClick={(ev) => ev.stopPropagation()}>
+                                      <div className="discoverCardFootLeft">
+                                        {c.tokenMint ? (
+                                          <button
+                                            className="discoverCardCopy"
+                                            type="button"
+                                            onClick={() => copyTimeline(c.tokenMint, caKey)}
+                                            title="Copy contract address"
+                                          >
+                                            <span className="discoverCardCopyLabel">CA</span>
+                                            <span className="discoverCardCopyVal mono">{shortWallet(c.tokenMint)}</span>
+                                            {timelineCopied === caKey ? <span className="discoverCardCopyCheck">✓</span> : null}
+                                          </button>
+                                        ) : null}
+                                      </div>
+                                      <div className="discoverCardSocials">
+                                        {c.websiteUrl ? (
+                                          <a className="discoverCardSocial" href={c.websiteUrl} target="_blank" rel="noreferrer noopener" title="Website" onClick={(e) => e.stopPropagation()}>
+                                            <SocialIcon type="website" />
+                                          </a>
+                                        ) : (
+                                          <span className="discoverCardSocial discoverCardSocialMuted" title="Website">
+                                            <SocialIcon type="website" />
+                                          </span>
+                                        )}
+                                        {c.xUrl ? (
+                                          <a className="discoverCardSocial" href={c.xUrl} target="_blank" rel="noreferrer noopener" title="X" onClick={(e) => e.stopPropagation()}>
+                                            <SocialIcon type="x" />
+                                          </a>
+                                        ) : (
+                                          <span className="discoverCardSocial discoverCardSocialMuted" title="X">
+                                            <SocialIcon type="x" />
+                                          </span>
+                                        )}
+                                        {c.telegramUrl ? (
+                                          <a className="discoverCardSocial" href={c.telegramUrl} target="_blank" rel="noreferrer noopener" title="Telegram" onClick={(e) => e.stopPropagation()}>
+                                            <SocialIcon type="telegram" />
+                                          </a>
+                                        ) : (
+                                          <span className="discoverCardSocial discoverCardSocialMuted" title="Telegram">
+                                            <SocialIcon type="telegram" />
+                                          </span>
+                                        )}
+                                        {c.discordUrl ? (
+                                          <a className="discoverCardSocial" href={c.discordUrl} target="_blank" rel="noreferrer noopener" title="Discord" onClick={(e) => e.stopPropagation()}>
+                                            <SocialIcon type="discord" />
+                                          </a>
+                                        ) : (
+                                          <span className="discoverCardSocial discoverCardSocialMuted" title="Discord">
+                                            <SocialIcon type="discord" />
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </>
+                        ) : null}
+                      </>
                     )}
                   </section>
                 </div>
