@@ -128,7 +128,9 @@ export async function POST(req: Request) {
     const discordUrl = typeof body.discordUrl === "string" ? body.discordUrl.trim() : "";
     const bannerUrl = typeof body.bannerUrl === "string" ? body.bannerUrl.trim() : "";
 
-    const devBuySol = Number(body.devBuySol ?? 0.01);
+    const devBuySolRaw = body.devBuySol;
+    const devBuySolParsed = Number(devBuySolRaw ?? 0.01);
+    const devBuySol = Number.isFinite(devBuySolParsed) && devBuySolParsed > 0 ? devBuySolParsed : 0.01;
     const devBuyLamports = Math.floor(devBuySol * 1_000_000_000);
     const requiredLamports = devBuyLamports + 10_000_000;
 

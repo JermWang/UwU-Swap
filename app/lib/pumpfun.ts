@@ -342,18 +342,22 @@ export async function buildUnsignedPumpfunCreateV2Tx(input: {
     tokenProgram: TOKEN_2022_PROGRAM_ID,
   });
 
-  const buyIx = buildBuyExactSolInInstruction({
-    user: input.user,
-    mint: input.mint,
-    bondingCurve,
-    associatedBondingCurve,
-    associatedUser,
-    feeRecipient,
-    creator: input.creator,
-    spendableSolInLamports: BigInt(input.spendableSolInLamports),
-    minTokensOut: BigInt(input.minTokensOut ?? 0n),
-    trackVolume: true,
-  });
+  const spendable = BigInt(input.spendableSolInLamports);
+  const buyIx =
+    spendable > 0n
+      ? buildBuyExactSolInInstruction({
+          user: input.user,
+          mint: input.mint,
+          bondingCurve,
+          associatedBondingCurve,
+          associatedUser,
+          feeRecipient,
+          creator: input.creator,
+          spendableSolInLamports: spendable,
+          minTokensOut: BigInt(input.minTokensOut ?? 0n),
+          trackVolume: true,
+        })
+      : null;
 
   const tx = new Transaction();
   tx.feePayer = input.user;
@@ -366,7 +370,7 @@ export async function buildUnsignedPumpfunCreateV2Tx(input: {
   tx.add(createIx);
   tx.add(extendIx);
   tx.add(createAtaIx);
-  tx.add(buyIx);
+  if (buyIx) tx.add(buyIx);
 
   const { blockhash, lastValidBlockHeight } = await input.connection.getLatestBlockhash("confirmed");
   tx.recentBlockhash = blockhash;
