@@ -160,6 +160,15 @@ function SocialIcon({ type }: { type: "x" | "telegram" | "discord" | "website" |
   );
 }
 
+type CreateProgressStatus = "pending" | "active" | "done" | "error";
+
+type CreateProgressStep = {
+  key: string;
+  label: string;
+  status: CreateProgressStatus;
+  detail?: string;
+};
+
 export default function Home() {
   const commitmentRef = useRef<HTMLDivElement | null>(null);
   const timelineRef = useRef<HTMLDivElement | null>(null);
@@ -211,6 +220,8 @@ export default function Home() {
     symbol: string;
     imageUrl: string;
   } | null>(null);
+
+  const [createProgress, setCreateProgress] = useState<CreateProgressStep[] | null>(null);
 
   const [projectEditMint, setProjectEditMint] = useState("");
   const [projectEditBusy, setProjectEditBusy] = useState<string | null>(null);
@@ -1331,12 +1342,36 @@ export default function Home() {
   async function createCommitment() {
     setError(null);
     setBusy("create");
+
+    const progressSteps: CreateProgressStep[] =
+      commitKind === "creator_reward" && commitPath === "automated"
+        ? [
+            { key: "validate", label: "Validating", status: "active" },
+            { key: "launch", label: "Submitting launch", status: "pending" },
+            { key: "finalize", label: "Finalizing", status: "pending" },
+          ]
+        : [
+            { key: "validate", label: "Validating", status: "active" },
+            { key: "create", label: "Creating commitment", status: "pending" },
+          ];
+    setCreateProgress(progressSteps);
+
+    const setStep = (key: string, patch: Partial<CreateProgressStep>) => {
+      setCreateProgress((prev) => {
+        if (!prev) return prev;
+        return prev.map((s) => (s.key === key ? { ...s, ...patch } : s));
+      });
+    };
+
     try {
       // Automated launch mode - use /api/launch
       if (commitKind === "creator_reward" && commitPath === "automated") {
         if (!adminWalletPubkey) {
           throw new Error("Admin sign-in required to launch");
         }
+        setStep("validate", { status: "done" });
+        setStep("launch", { status: "active" });
+
         const launchBody = {
           name: draftName.trim(),
           symbol: draftSymbol.trim(),
@@ -1349,10 +1384,13 @@ export default function Home() {
           xUrl: draftXUrl.trim(),
           telegramUrl: draftTelegramUrl.trim(),
           discordUrl: draftDiscordUrl.trim(),
-          devBuySol: 0.01, // Default dev buy
+          devBuySol: 0.01,
         };
 
         const launched = await apiPost<{ commitmentId: string; tokenMint: string; launchTxSig: string }>("/api/launch", launchBody);
+        setStep("launch", { status: "done" });
+        setStep("finalize", { status: "done" });
+
         setLaunchSuccess({
           commitmentId: launched.commitmentId,
           tokenMint: launched.tokenMint,
@@ -1365,6 +1403,9 @@ export default function Home() {
       }
 
       // Manual mode or personal commitment - use /api/commitments
+      setStep("validate", { status: "done" });
+      setStep("create", { status: "active" });
+
       const body = (() => {
         if (commitKind === "creator_reward") {
           return {
@@ -1374,7 +1415,7 @@ export default function Home() {
             creatorFeeMode: rewardCreatorFeeMode,
             tokenMint: rewardTokenMint.trim().length ? rewardTokenMint.trim() : undefined,
             devVerify,
-            milestones: [], // Milestones are added post-launch from the dashboard
+            milestones: [],
           };
         }
 
@@ -1393,7 +1434,18 @@ export default function Home() {
       }
 
       const created = await apiPost<{ id: string }>("/api/commitments", body);
+      setStep("create", { status: "done" });
       router.push(`/commit/${created.id}`);
+    } catch (e) {
+      const msg = (e as Error)?.message ?? String(e);
+      setError(msg);
+
+      setCreateProgress((prev) => {
+        if (!prev) return prev;
+        const active = prev.find((s) => s.status === "active")?.key;
+        if (!active) return prev;
+        return prev.map((s) => (s.key === active ? { ...s, status: "error", detail: msg } : s));
+      });
     } finally {
       setBusy(null);
     }
@@ -2040,6 +2092,36 @@ export default function Home() {
                         </button>
                       </div>
                     </>
+                  ) : null}
+
+                  {createProgress ? (
+                    <div className="createInfoBox" style={{ marginTop: 12 }}>
+                      <div className="createInfoTitle">Progress</div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 10 }}>
+                        {createProgress.map((s) => {
+                          const color =
+                            s.status === "done"
+                              ? "rgba(134, 239, 172, 0.9)"
+                              : s.status === "error"
+                                ? "rgba(248, 113, 113, 0.9)"
+                                : s.status === "active"
+                                  ? "rgba(56, 189, 248, 0.9)"
+                                  : "rgba(255, 255, 255, 0.35)";
+
+                          const opacity = s.status === "pending" ? 0.65 : 1;
+
+                          return (
+                            <div key={s.key} style={{ display: "flex", alignItems: "center", gap: 10, opacity }}>
+                              <div style={{ width: 8, height: 8, borderRadius: 999, background: color, boxShadow: `0 0 0 3px rgba(255,255,255,0.05)` }} />
+                              <div className="createInfoText" style={{ margin: 0 }}>
+                                {s.label}
+                                {s.detail && s.status === "error" ? <span style={{ marginLeft: 8, color: "rgba(248, 113, 113, 0.95)" }}>({s.detail})</span> : null}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
                   ) : null}
 
                   {/* Error Display */}
