@@ -104,10 +104,14 @@ export async function POST(req: Request) {
 
     const fundingSig = typeof body?.fundingSig === "string" ? body.fundingSig.trim() : "";
 
-    if (!walletId || !creatorWallet || !payerWallet) {
-      if (!fundingSig) {
-        return NextResponse.json({ error: "Provide either (walletId, creatorWallet, payerWallet) or fundingSig" }, { status: 400 });
-      }
+    if ((!creatorWallet || !payerWallet) && !fundingSig) {
+      return NextResponse.json(
+        { error: "Provide either (creatorWallet, payerWallet) or fundingSig" },
+        { status: 400 }
+      );
+    }
+
+    if ((!creatorWallet || !payerWallet) && fundingSig) {
 
       const connection = getConnection();
       const parsed = await connection.getParsedTransaction(fundingSig, {
@@ -151,6 +155,7 @@ export async function POST(req: Request) {
       }
     }
 
+    // If caller didn't provide walletId, try to resolve it from the Privy wallet address.
     if (!walletId && creatorWallet) {
       const wid = await privyFindSolanaWalletIdByAddress({ address: creatorWallet, maxPages: 20 });
       walletId = wid || "";
