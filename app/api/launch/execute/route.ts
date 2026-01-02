@@ -6,10 +6,7 @@ import crypto from "crypto";
 import { checkRateLimit } from "../../../lib/rateLimit";
 import { getSafeErrorMessage } from "../../../lib/safeError";
 import { confirmTransactionSignature, getConnection } from "../../../lib/solana";
-import {
-  privyRefundWalletToDestination,
-  privySignAndSendSolanaTransaction,
-} from "../../../lib/privy";
+import { privyRefundWalletToDestination, privySignSolanaTransaction } from "../../../lib/privy";
 import { buildUnsignedPumpfunCreateV2Tx } from "../../../lib/pumpfun";
 import { createRewardCommitmentRecord, insertCommitment } from "../../../lib/escrowStore";
 import { upsertProjectProfile } from "../../../lib/projectProfilesStore";
@@ -295,21 +292,30 @@ export async function POST(req: Request) {
     });
 
     stage = "send_tx";
-    const serializeForPrivy = () => tx.serialize({ requireAllSignatures: false }).toString("base64");
-    try {
-      const sent = await privySignAndSendSolanaTransaction({ walletId: launchWalletId, caip2: SOLANA_CAIP2, transactionBase64: serializeForPrivy() });
-      launchTxSig = sent.signature;
-    } catch (sendErr) {
-      const msg = getSafeErrorMessage(sendErr);
-      if (msg.toLowerCase().includes("blockhash not found")) {
-        const retryLatest = await connection.getLatestBlockhash("confirmed");
-        tx.recentBlockhash = retryLatest.blockhash;
-        (tx as any).lastValidBlockHeight = retryLatest.lastValidBlockHeight;
-        tx.partialSign(mintKeypair);
-        const sent = await privySignAndSendSolanaTransaction({ walletId: launchWalletId, caip2: SOLANA_CAIP2, transactionBase64: serializeForPrivy() });
-        launchTxSig = sent.signature;
-      } else {
-        throw sendErr;
+    const { withRetry } = await import("../../../lib/rpc");
+    let sendBlockhash = "";
+    let sendLastValidBlockHeight = 0;
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const latest = await withRetry(() => connection.getLatestBlockhash("processed"));
+      sendBlockhash = latest.blockhash;
+      sendLastValidBlockHeight = latest.lastValidBlockHeight;
+
+      tx.recentBlockhash = sendBlockhash;
+      (tx as any).lastValidBlockHeight = sendLastValidBlockHeight;
+      tx.partialSign(mintKeypair);
+
+      try {
+        const serializeForPrivy = () => tx.serialize({ requireAllSignatures: false }).toString("base64");
+        const signed = await privySignSolanaTransaction({ walletId: launchWalletId, transactionBase64: serializeForPrivy() });
+        const raw = Buffer.from(signed.signedTransactionBase64, "base64");
+        launchTxSig = await withRetry(() =>
+          connection.sendRawTransaction(raw, { skipPreflight: false, preflightCommitment: "processed", maxRetries: 3 })
+        );
+        break;
+      } catch (sendErr) {
+        const msg = getSafeErrorMessage(sendErr);
+        const isBlockhashNotFound = msg.toLowerCase().includes("blockhash not found");
+        if (!isBlockhashNotFound || attempt === 3) throw sendErr;
       }
     }
 
@@ -317,8 +323,8 @@ export async function POST(req: Request) {
     await confirmTransactionSignature({
       connection,
       signature: launchTxSig,
-      blockhash: String(tx.recentBlockhash ?? ""),
-      lastValidBlockHeight: Number((tx as any).lastValidBlockHeight ?? 0),
+      blockhash: sendBlockhash || String(tx.recentBlockhash ?? ""),
+      lastValidBlockHeight: sendLastValidBlockHeight || Number((tx as any).lastValidBlockHeight ?? 0),
     });
 
     await auditLog("launch_onchain_success", {
