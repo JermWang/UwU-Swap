@@ -14,6 +14,11 @@ export const runtime = "nodejs";
 
 const SOLANA_CAIP2 = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp"; // mainnet
 
+const CREATOR_FEE_SWEEP_KEEP_LAMPORTS = (() => {
+  const raw = Number(process.env.CTS_CREATOR_FEE_SWEEP_KEEP_LAMPORTS ?? "");
+  return Number.isFinite(raw) && raw >= 0 ? Math.floor(raw) : 25_000;
+})();
+
 function isCronAuthorized(req: Request): boolean {
   const secret = String(process.env.CRON_SECRET ?? "").trim();
   if (!secret) return false;
@@ -54,7 +59,7 @@ async function sweepOne(commitmentId: string): Promise<any> {
     const { ix: claimIx } = buildCollectCreatorFeeInstruction({ creator: creatorWallet });
 
     const sameWallet = creatorWallet.toBase58() === escrowPubkey.toBase58();
-    const transferAmount = sameWallet ? 0 : Math.max(0, claimableLamports - 5000);
+    const transferAmount = sameWallet ? 0 : Math.max(0, claimableLamports - CREATOR_FEE_SWEEP_KEEP_LAMPORTS);
 
     const tx = new Transaction();
     tx.feePayer = creatorWallet;

@@ -741,7 +741,7 @@ export async function insertCommitment(r: CommitmentRecord): Promise<void> {
       escrow_pubkey, escrow_secret_key,
       kind, creator_pubkey, creator_fee_mode, token_mint, total_funded_lamports, unlocked_lamports, milestones_json,
       status, created_at_unix, resolved_at_unix, resolved_tx_sig
-    ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
+    ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
     [
       r.id,
       r.statement ?? null,

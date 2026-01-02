@@ -369,6 +369,26 @@ body > * {
   flex-wrap: wrap;
 }
 
+.globalNavLinks {
+  position: relative;
+}
+
+.globalNavLinksDesktop {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.globalNavLinksMobile {
+  display: none;
+  align-items: center;
+  gap: 8px;
+}
+
+.globalNavMenu {
+  display: none;
+}
+
 .globalNavIcon {
   display: block;
 }
@@ -1262,6 +1282,27 @@ body[data-skin="landing"] .heroMarkImage {
 
 body[data-skin="landing"] .heroMarkImageSvg {
   filter: invert(1);
+}
+
+body[data-skin="landing"] .landingHeroMarkWrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+body[data-skin="landing"] .landingHeroBeta {
+  position: absolute;
+  top: 0;
+  right: 0;
+  transform: translate(72%, -62%);
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.82);
+  opacity: 0.95;
+  pointer-events: none;
 }
 
 body[data-skin="landing"] .heroMark,
@@ -6408,6 +6449,65 @@ body[data-skin="app"] .commitComplianceFill {
 
   .globalNavLinks {
     gap: 4px;
+  }
+
+  .globalNavLinksDesktop {
+    display: none;
+  }
+
+  .globalNavLinksMobile {
+    display: inline-flex;
+  }
+
+  .globalNavMenu {
+    display: block;
+    position: absolute;
+    top: calc(100% + 10px);
+    right: 0;
+    min-width: min(320px, calc(100vw - 24px));
+    padding: 10px;
+    border-radius: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: rgba(0, 0, 0, 0.92);
+    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
+    opacity: 0;
+    transform: translateY(-6px);
+    pointer-events: none;
+    transition: opacity 0.16s var(--ease-out), transform 0.16s var(--ease-out);
+    z-index: 60;
+  }
+
+  .globalNavMenuOpen {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+  }
+
+  .globalNavMenuItem {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 10px 12px;
+    border-radius: 14px;
+    text-decoration: none;
+    color: rgba(255, 255, 255, 0.78);
+    transition: background 0.18s var(--ease-out), color 0.18s var(--ease-out), transform 0.18s var(--ease-out);
+  }
+
+  .globalNavMenuItem:hover {
+    color: #fff;
+    background: rgba(255, 255, 255, 0.08);
+    transform: translateY(-1px);
+  }
+
+  .globalNavMenuItem:active {
+    transform: translateY(0);
+  }
+
+  .globalNavMenuItemActive {
+    color: #fff;
+    background: rgba(255, 255, 255, 0.12);
   }
 
   .globalNavLink {

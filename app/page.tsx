@@ -1765,7 +1765,10 @@ export default function Home() {
                         </div>
 
                         <div className="heroMark">
-                          <img src="/branding/svg-logo.svg" alt="Commit To Ship" className="heroMarkImage heroMarkImageSvg" />
+                          <span className="landingHeroMarkWrap">
+                            <img src="/branding/svg-logo.svg" alt="Commit To Ship" className="heroMarkImage heroMarkImageSvg" />
+                            <span className="landingHeroBeta" aria-hidden="true">BETA</span>
+                          </span>
                         </div>
 
                         <h1 className="landingMobileTitle">COMMIT TO SHIP</h1>
@@ -1795,19 +1798,6 @@ export default function Home() {
                           >
                             Explore Discover
                           </button>
-
-                          <div className="landingSocials">
-                            <a
-                              className="landingSocialBtn"
-                              href="https://x.com/CommitToShip"
-                              target="_blank"
-                              rel="noreferrer noopener"
-                              aria-label="Twitter"
-                              title="Twitter"
-                            >
-                              <SocialIcon type="x" />
-                            </a>
-                          </div>
                         </div>
                       </div>
 
@@ -2712,7 +2702,10 @@ export default function Home() {
                 style={{ marginTop: 12, borderColor: "rgba(251, 191, 36, 0.35)", background: "rgba(251, 191, 36, 0.08)" }}
               >
                 <div className="createInfoTitle" style={{ color: "rgba(251, 191, 36, 0.9)" }}>Finalization warning</div>
-                <div className="createInfoText">Saved on-chain, but post-launch steps failed: {launchSuccess.postLaunchError}</div>
+                <div className="createInfoText">
+                  Your token is live. We’re finishing a few setup steps in the background.
+                  {process.env.NODE_ENV !== "production" ? ` (${launchSuccess.postLaunchError})` : null}
+                </div>
               </div>
             ) : null}
 

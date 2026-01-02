@@ -37,7 +37,6 @@ export default function RootLayout({
                   <Link className="globalNavBrand" href="/">
                     <span className="globalNavBrandMarkWrap">
                       <img className="globalNavBrandMark" src="/branding/white-logo.png" alt="Commit To Ship" />
-                      <span className="globalNavBeta" aria-hidden="true">BETA</span>
                     </span>
                     <span className="globalNavBrandText">Commit To Ship</span>
                   </Link>

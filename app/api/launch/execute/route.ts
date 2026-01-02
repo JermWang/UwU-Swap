@@ -16,6 +16,7 @@ import { getAdminCookieName, getAdminSessionWallet, getAllowedAdminWallets, veri
 export const runtime = "nodejs";
 
 const SOLANA_CAIP2 = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp"; // mainnet
+const IS_PROD = process.env.NODE_ENV === "production";
 
 function isPublicLaunchEnabled(): boolean {
   const raw = String(process.env.CTS_PUBLIC_LAUNCHES ?? "").trim().toLowerCase();
@@ -415,14 +416,17 @@ export async function POST(req: Request) {
         launchTxSig,
       });
     } catch (postErr) {
-      postLaunchError = getSafeErrorMessage(postErr);
+      const internal = getSafeErrorMessage(postErr);
+      postLaunchError = IS_PROD
+        ? "Your token launched successfully. We’re finishing a few setup steps in the background."
+        : internal;
       try {
         await auditLog("launch_postchain_error", {
           stage,
           commitmentId,
           tokenMint: tokenMintB58,
           launchTxSig,
-          error: postLaunchError,
+          error: internal,
         });
       } catch {
         // ignore
@@ -462,7 +466,9 @@ export async function POST(req: Request) {
           launchTxSig,
           metadataUri,
           escrowPubkey,
-          postLaunchError: msg,
+          postLaunchError: IS_PROD
+            ? "Your token launched successfully. We’re finishing a few setup steps in the background."
+            : msg,
         },
         { status: 200 }
       );
@@ -506,6 +512,10 @@ export async function POST(req: Request) {
     }
 
     await auditLog("launch_error", { stage, commitmentId, walletId, creatorWallet, payerWallet, launchTxSig, error: msg });
+    if (IS_PROD) {
+      const publicMsg = status >= 500 ? "Launch failed due to a server error. Please try again." : msg;
+      return NextResponse.json({ error: publicMsg }, { status: status });
+    }
     return NextResponse.json({ error: msg, stage, commitmentId, walletId, creatorWallet, payerWallet, launchTxSig }, { status: status });
   }
 }
