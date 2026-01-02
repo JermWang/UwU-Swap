@@ -99,10 +99,11 @@ export async function POST(req: Request) {
 
     const devBuyLamports = Math.floor(devBuySol * 1_000_000_000);
     const requiredLamports = devBuyLamports + 10_000_000;
+    const balanceBufferLamports = 50_000;
 
     const connection = getConnection();
     const currentLamports = await connection.getBalance(treasuryPubkey, "confirmed");
-    const missingLamports = Math.max(0, requiredLamports - currentLamports);
+    const missingLamports = Math.max(0, requiredLamports + balanceBufferLamports - currentLamports);
     const needsFunding = missingLamports > 0;
 
     let txBase64: string | null = null;

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { Keypair, PublicKey } from "@solana/web3.js";
+import { Keypair, PublicKey, SystemProgram, Transaction } from "@solana/web3.js";
+import { Buffer } from "buffer";
 import crypto from "crypto";
 
 import { checkRateLimit } from "../../../lib/rateLimit";
@@ -162,17 +163,51 @@ export async function POST(req: Request) {
     stage = "verify_treasury_balance";
     const connection = getConnection();
     const treasuryBalance = await connection.getBalance(treasuryPubkey, "confirmed");
-    if (treasuryBalance < requiredLamports + 50_000) {
-      return NextResponse.json(
-        {
-          error: `Treasury wallet has insufficient balance (${treasuryBalance} lamports, need ~${requiredLamports + 50_000}). Re-run prepare to top up.`,
-          stage,
-          walletId,
-          treasuryWallet,
-          payerWallet,
-        },
-        { status: 409 }
+    const balanceBufferLamports = 50_000;
+    const missingLamports = Math.max(0, requiredLamports + balanceBufferLamports - treasuryBalance);
+    if (missingLamports > 0) {
+      const latest = await connection.getLatestBlockhash("confirmed");
+
+      const tx = new Transaction();
+      tx.feePayer = payerPubkey;
+      tx.recentBlockhash = latest.blockhash;
+      tx.lastValidBlockHeight = latest.lastValidBlockHeight;
+      tx.add(
+        SystemProgram.transfer({
+          fromPubkey: payerPubkey,
+          toPubkey: treasuryPubkey,
+          lamports: missingLamports,
+        })
       );
+
+      const txBytes = tx.serialize({ requireAllSignatures: false, verifySignatures: false });
+      const txBase64 = Buffer.from(Uint8Array.from(txBytes)).toString("base64");
+
+      await auditLog("launch_execute_needs_funding", {
+        walletId,
+        treasuryWallet,
+        payerWallet,
+        requiredLamports,
+        currentLamports: treasuryBalance,
+        missingLamports,
+      });
+
+      return NextResponse.json({
+        ok: true,
+        needsFunding: true,
+        walletId,
+        treasuryWallet,
+        payerWallet,
+        requiredLamports,
+        currentLamports: treasuryBalance,
+        missingLamports,
+        txBase64,
+        txFormat: "base64",
+        txType: "fund_treasury_wallet",
+        blockhash: latest.blockhash,
+        lastValidBlockHeight: latest.lastValidBlockHeight,
+        stage: "needs_funding",
+      });
     }
 
     stage = "create_launch_wallet";

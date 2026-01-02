@@ -1446,7 +1446,49 @@ export default function Home() {
           fundingSig: fundSig || undefined,
         };
 
-        const launched = await apiPost<{ commitmentId: string; tokenMint: string; launchTxSig: string }>("/api/launch/execute", launchBody);
+        type LaunchExecuteResponse =
+          | {
+              ok: true;
+              needsFunding: true;
+              txBase64: string;
+              missingLamports: number;
+              stage?: string;
+            }
+          | {
+              ok: true;
+              needsFunding?: false;
+              commitmentId: string;
+              tokenMint: string;
+              launchTxSig: string;
+            };
+
+        const executeOnce = async () => apiPost<LaunchExecuteResponse>("/api/launch/execute", launchBody);
+
+        let launched = await executeOnce();
+        if ("needsFunding" in launched && launched.needsFunding) {
+          setStep("fund", { status: "active", detail: "Top-up required" });
+
+          const txBase64 = String(launched?.txBase64 ?? "");
+          if (!txBase64) throw new Error("Server did not return a funding transaction");
+
+          const topUpTx = Transaction.from(base64ToBytes(txBase64));
+          const topUpSent = await provider.signAndSendTransaction(topUpTx);
+          const topUpSig = String(topUpSent?.signature ?? topUpSent);
+          if (!topUpSig) throw new Error("Funding transaction failed to return a signature");
+
+          setStep("fund", { status: "done" });
+          setStep("launch", { status: "active" });
+
+          for (let i = 0; i < 3; i++) {
+            launched = await executeOnce();
+            if (!("needsFunding" in launched && launched.needsFunding)) break;
+            await new Promise((r) => setTimeout(r, 1250));
+          }
+        }
+
+        if ("needsFunding" in launched && launched.needsFunding) {
+          throw new Error("Treasury top-up not confirmed yet. Please try again in a few seconds.");
+        }
         setStep("launch", { status: "done" });
         setStep("finalize", { status: "done" });
 
