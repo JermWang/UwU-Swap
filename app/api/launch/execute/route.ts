@@ -1,0 +1,343 @@
+import { NextResponse } from "next/server";
+import { Keypair, PublicKey } from "@solana/web3.js";
+import crypto from "crypto";
+
+import { checkRateLimit } from "../../../lib/rateLimit";
+import { getSafeErrorMessage } from "../../../lib/safeError";
+import { confirmTransactionSignature, getConnection } from "../../../lib/solana";
+import { privyRefundWalletToDestination, privySignAndSendSolanaTransaction } from "../../../lib/privy";
+import { buildUnsignedPumpfunCreateV2Tx } from "../../../lib/pumpfun";
+import { createRewardCommitmentRecord, insertCommitment } from "../../../lib/escrowStore";
+import { upsertProjectProfile } from "../../../lib/projectProfilesStore";
+import { auditLog } from "../../../lib/auditLog";
+import { getAdminCookieName, getAdminSessionWallet, getAllowedAdminWallets, verifyAdminOrigin } from "../../../lib/adminSession";
+
+export const runtime = "nodejs";
+
+const SOLANA_CAIP2 = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp"; // mainnet
+
+function isPublicLaunchEnabled(): boolean {
+  const raw = String(process.env.CTS_PUBLIC_LAUNCHES ?? "").trim().toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
+}
+
+export async function GET() {
+  const res = NextResponse.json({ error: "Method Not Allowed. Use POST /api/launch/execute." }, { status: 405 });
+  res.headers.set("allow", "POST, OPTIONS");
+  return res;
+}
+
+export async function OPTIONS(req: Request) {
+  const expected = String(process.env.APP_ORIGIN ?? "").trim();
+  const origin = req.headers.get("origin") ?? "";
+
+  try {
+    verifyAdminOrigin(req);
+  } catch {
+    const res = new NextResponse(null, { status: 204 });
+    res.headers.set("allow", "POST, OPTIONS");
+    return res;
+  }
+
+  const res = new NextResponse(null, { status: 204 });
+  res.headers.set("allow", "POST, OPTIONS");
+  res.headers.set("access-control-allow-origin", origin || expected);
+  res.headers.set("access-control-allow-methods", "POST, OPTIONS");
+  res.headers.set("access-control-allow-headers", "content-type");
+  res.headers.set("access-control-allow-credentials", "true");
+  res.headers.set("vary", "origin");
+  return res;
+}
+
+export async function POST(req: Request) {
+  let stage = "init";
+  let walletId = "";
+  let creatorWallet = "";
+  let payerWallet = "";
+  let commitmentId = "";
+  let launchTxSig = "";
+  let creatorPubkey: PublicKey | null = null;
+  let payerPubkey: PublicKey | null = null;
+  let funded = false;
+  let fundedLamports = 0;
+
+  try {
+    const rl = await checkRateLimit(req, { keyPrefix: "launch:execute", limit: 10, windowSeconds: 60 });
+    if (!rl.allowed) {
+      const res = NextResponse.json({ error: "Rate limit exceeded" }, { status: 429 });
+      res.headers.set("retry-after", String(rl.retryAfterSeconds));
+      return res;
+    }
+
+    verifyAdminOrigin(req);
+
+    if (!isPublicLaunchEnabled()) {
+      const cookieHeader = String(req.headers.get("cookie") ?? "");
+      const hasAdminCookie = cookieHeader.includes(`${getAdminCookieName()}=`);
+      const allowed = getAllowedAdminWallets();
+      const adminWallet = await getAdminSessionWallet(req);
+
+      if (!adminWallet) {
+        await auditLog("admin_launch_denied", { hasAdminCookie });
+        return NextResponse.json(
+          {
+            error: hasAdminCookie
+              ? "Admin session not found or expired. Try Admin Sign-In again."
+              : "Admin Sign-In required",
+          },
+          { status: 401 }
+        );
+      }
+
+      if (!allowed.has(adminWallet)) {
+        await auditLog("admin_launch_denied", { adminWallet });
+        return NextResponse.json({ error: "Not an allowed admin wallet" }, { status: 401 });
+      }
+    }
+
+    stage = "read_body";
+    const body = (await req.json()) as any;
+
+    walletId = typeof body.walletId === "string" ? body.walletId.trim() : "";
+    creatorWallet = typeof body.creatorWallet === "string" ? body.creatorWallet.trim() : "";
+    payerWallet = typeof body.payerWallet === "string" ? body.payerWallet.trim() : "";
+
+    const name = typeof body.name === "string" ? body.name.trim() : "";
+    const symbol = typeof body.symbol === "string" ? body.symbol.trim() : "";
+    const description = typeof body.description === "string" ? body.description.trim() : "";
+    const imageUrl = typeof body.imageUrl === "string" ? body.imageUrl.trim() : "";
+    const statement = typeof body.statement === "string" ? body.statement.trim() : "";
+    const payoutWallet = typeof body.payoutWallet === "string" ? body.payoutWallet.trim() : "";
+
+    const websiteUrl = typeof body.websiteUrl === "string" ? body.websiteUrl.trim() : "";
+    const xUrl = typeof body.xUrl === "string" ? body.xUrl.trim() : "";
+    const telegramUrl = typeof body.telegramUrl === "string" ? body.telegramUrl.trim() : "";
+    const discordUrl = typeof body.discordUrl === "string" ? body.discordUrl.trim() : "";
+    const bannerUrl = typeof body.bannerUrl === "string" ? body.bannerUrl.trim() : "";
+
+    const devBuySol = Number(body.devBuySol ?? 0.01);
+    const devBuyLamports = Math.floor(devBuySol * 1_000_000_000);
+    const requiredLamports = devBuyLamports + 10_000_000;
+
+    if (!walletId) return NextResponse.json({ error: "walletId is required" }, { status: 400 });
+    if (!creatorWallet) return NextResponse.json({ error: "creatorWallet is required" }, { status: 400 });
+    if (!payerWallet) return NextResponse.json({ error: "payerWallet is required" }, { status: 400 });
+
+    if (!name) return NextResponse.json({ error: "Token name is required" }, { status: 400 });
+    if (!symbol) return NextResponse.json({ error: "Token symbol is required" }, { status: 400 });
+    if (!imageUrl) return NextResponse.json({ error: "Token image is required" }, { status: 400 });
+    if (!payoutWallet) return NextResponse.json({ error: "Payout wallet is required" }, { status: 400 });
+
+    let payoutPubkey: PublicKey;
+    try {
+      payoutPubkey = new PublicKey(payoutWallet);
+    } catch {
+      return NextResponse.json({ error: "Invalid payout wallet address" }, { status: 400 });
+    }
+
+    try {
+      payerPubkey = new PublicKey(payerWallet);
+    } catch {
+      return NextResponse.json({ error: "Invalid payer wallet address" }, { status: 400 });
+    }
+
+    try {
+      creatorPubkey = new PublicKey(creatorWallet);
+    } catch {
+      return NextResponse.json({ error: "Invalid creator wallet address" }, { status: 400 });
+    }
+
+    stage = "verify_funding";
+    const connection = getConnection();
+    const balance = await connection.getBalance(creatorPubkey, "confirmed");
+    if (balance < requiredLamports) {
+      return NextResponse.json(
+        {
+          error: `Launch wallet not funded yet (${balance} lamports, need ${requiredLamports}).`,
+          stage,
+          walletId,
+          creatorWallet,
+          payerWallet,
+        },
+        { status: 409 }
+      );
+    }
+    funded = true;
+    fundedLamports = requiredLamports;
+
+    stage = "upload_metadata";
+    const metadataFormData = new FormData();
+    metadataFormData.append("name", name);
+    metadataFormData.append("symbol", symbol);
+    metadataFormData.append("description", description);
+    metadataFormData.append("showName", "true");
+    if (websiteUrl) metadataFormData.append("website", websiteUrl);
+    if (xUrl) metadataFormData.append("twitter", xUrl);
+    if (telegramUrl) metadataFormData.append("telegram", telegramUrl);
+
+    stage = "fetch_image";
+    const imageResponse = await fetch(imageUrl);
+    if (!imageResponse.ok) {
+      return NextResponse.json({ error: "Failed to fetch token image", stage }, { status: 400 });
+    }
+    const imageBlob = await imageResponse.blob();
+    metadataFormData.append("file", imageBlob, "token.png");
+
+    stage = "pump_ipfs";
+    const ipfsResponse = await fetch("https://pump.fun/api/ipfs", { method: "POST", body: metadataFormData });
+    if (!ipfsResponse.ok) {
+      const ipfsError = await ipfsResponse.text().catch(() => "Unknown error");
+      return NextResponse.json({ error: `Failed to upload metadata: ${ipfsError}`, stage }, { status: 500 });
+    }
+
+    const ipfsJson = await ipfsResponse.json();
+    const metadataUri = ipfsJson?.metadataUri;
+    if (!metadataUri) {
+      return NextResponse.json({ error: "Failed to get metadata URI from Pump.fun", stage }, { status: 500 });
+    }
+
+    stage = "build_tx";
+    const mintKeypair = Keypair.generate();
+
+    const { tx, bondingCurve } = await buildUnsignedPumpfunCreateV2Tx({
+      connection,
+      user: creatorPubkey,
+      mint: mintKeypair.publicKey,
+      name,
+      symbol,
+      uri: metadataUri,
+      creator: creatorPubkey,
+      isMayhemMode: false,
+      spendableSolInLamports: BigInt(devBuyLamports),
+      minTokensOut: 0n,
+      computeUnitLimit: 300_000,
+      computeUnitPriceMicroLamports: 100_000,
+    });
+
+    tx.partialSign(mintKeypair);
+
+    commitmentId = crypto.randomBytes(16).toString("hex");
+    const tokenMintB58 = mintKeypair.publicKey.toBase58();
+
+    stage = "audit_attempt";
+    await auditLog("launch_attempt", {
+      commitmentId,
+      tokenMint: tokenMintB58,
+      creatorWallet,
+      payoutWallet: payoutPubkey.toBase58(),
+      walletId,
+      name,
+      symbol,
+      payerWallet,
+    });
+
+    stage = "send_tx";
+    const txBase64 = tx.serialize({ requireAllSignatures: false }).toString("base64");
+    const sent = await privySignAndSendSolanaTransaction({ walletId, caip2: SOLANA_CAIP2, transactionBase64: txBase64 });
+    launchTxSig = sent.signature;
+
+    stage = "confirm_tx";
+    await confirmTransactionSignature({
+      connection,
+      signature: launchTxSig,
+      blockhash: String(tx.recentBlockhash ?? ""),
+      lastValidBlockHeight: Number((tx as any).lastValidBlockHeight ?? 0),
+    });
+
+    await auditLog("launch_onchain_success", { commitmentId, tokenMint: tokenMintB58, launchTxSig });
+
+    const escrowPubkey = creatorPubkey.toBase58();
+
+    const baseRecord = createRewardCommitmentRecord({
+      id: commitmentId,
+      statement: statement || `Lock creator fees for ${name}. Ship milestones, release on-chain.`,
+      creatorPubkey: payoutPubkey.toBase58(),
+      escrowPubkey,
+      escrowSecretKeyB58: `privy:${walletId}`,
+      milestones: [],
+      tokenMint: mintKeypair.publicKey.toBase58(),
+      creatorFeeMode: "managed",
+    });
+
+    const record = {
+      ...baseRecord,
+      authority: creatorPubkey.toBase58(),
+      destinationOnFail: payoutPubkey.toBase58(),
+    };
+
+    stage = "insert_commitment";
+    await insertCommitment(record);
+
+    stage = "save_profile";
+    try {
+      await upsertProjectProfile({
+        tokenMint: mintKeypair.publicKey.toBase58(),
+        name: name || null,
+        symbol: symbol || null,
+        description: description || null,
+        websiteUrl: websiteUrl || null,
+        xUrl: xUrl || null,
+        telegramUrl: telegramUrl || null,
+        discordUrl: discordUrl || null,
+        imageUrl: imageUrl || null,
+        bannerUrl: bannerUrl || null,
+        metadataUri: metadataUri || null,
+        createdByWallet: payoutPubkey.toBase58(),
+      });
+    } catch (profileErr) {
+      await auditLog("launch_profile_save_error", { commitmentId, tokenMint: mintKeypair.publicKey.toBase58(), error: getSafeErrorMessage(profileErr) });
+    }
+
+    await auditLog("launch_success", { commitmentId, tokenMint: mintKeypair.publicKey.toBase58(), creatorWallet, payerWallet, launchTxSig });
+
+    return NextResponse.json({
+      ok: true,
+      commitmentId,
+      tokenMint: mintKeypair.publicKey.toBase58(),
+      creatorWallet,
+      payerWallet,
+      bondingCurve: bondingCurve.toBase58(),
+      launchTxSig,
+      metadataUri,
+      escrowPubkey,
+    });
+  } catch (e) {
+    const msg = getSafeErrorMessage(e);
+
+    if (funded && walletId && creatorPubkey && payerPubkey && !launchTxSig) {
+      try {
+        const refund = await privyRefundWalletToDestination({
+          walletId,
+          fromPubkey: creatorPubkey,
+          toPubkey: payerPubkey,
+          caip2: SOLANA_CAIP2,
+          keepLamports: 10_000,
+        });
+        await auditLog("launch_refund_attempt", {
+          commitmentId,
+          walletId,
+          creatorWallet,
+          fundedLamports,
+          payerWallet: payerPubkey.toBase58(),
+          ok: refund.ok,
+          refundSignature: refund.ok ? refund.signature : undefined,
+          refundedLamports: refund.ok ? refund.refundedLamports : undefined,
+          refundError: refund.ok ? undefined : refund.error,
+        });
+      } catch (refundErr) {
+        await auditLog("launch_refund_attempt", {
+          commitmentId,
+          walletId,
+          creatorWallet,
+          fundedLamports,
+          payerWallet: payerWallet,
+          ok: false,
+          refundError: getSafeErrorMessage(refundErr),
+        });
+      }
+    }
+
+    await auditLog("launch_error", { stage, commitmentId, walletId, creatorWallet, payerWallet, launchTxSig, error: msg });
+    return NextResponse.json({ error: msg, stage, commitmentId, walletId, creatorWallet, payerWallet, launchTxSig }, { status: 500 });
+  }
+}

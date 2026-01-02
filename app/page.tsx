@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import bs58 from "bs58";
+import { Transaction } from "@solana/web3.js";
 
 import ClosedBetaNotice from "./components/ClosedBetaNotice";
 
@@ -395,7 +396,11 @@ export default function Home() {
       body: body == null ? undefined : JSON.stringify(body),
     });
     const json = await readJsonSafe(res);
-    if (!res.ok) throw new Error(json?.error ?? `Request failed (${res.status})`);
+    if (!res.ok) {
+      const base = json?.error ?? `Request failed (${res.status})`;
+      const stage = typeof json?.stage === "string" ? json.stage : "";
+      throw new Error(stage ? `${base} (stage: ${stage})` : base);
+    }
     return json as T;
   }
 
@@ -536,6 +541,13 @@ export default function Home() {
 
   function getSolanaProvider(): any {
     return (window as any)?.solana;
+  }
+
+  function base64ToBytes(b64: string): Uint8Array {
+    const bin = atob(b64);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
   }
 
   async function connectDevWallet() {
@@ -1347,6 +1359,7 @@ export default function Home() {
       commitKind === "creator_reward" && commitPath === "automated"
         ? [
             { key: "validate", label: "Validating", status: "active" },
+            { key: "fund", label: "Funding wallet", status: "pending" },
             { key: "launch", label: "Submitting launch", status: "pending" },
             { key: "finalize", label: "Finalizing", status: "pending" },
           ]
@@ -1369,10 +1382,47 @@ export default function Home() {
         if (!adminWalletPubkey) {
           throw new Error("Admin sign-in required to launch");
         }
+
+        const provider = getSolanaProvider();
+        if (!provider?.connect) throw new Error("Wallet provider not found");
+        const connectRes = await provider.connect();
+        const pk = (connectRes?.publicKey ?? provider.publicKey)?.toBase58?.();
+        if (!pk) throw new Error("Failed to read wallet public key");
+        if (!provider.signAndSendTransaction) {
+          throw new Error("Wallet does not support signAndSendTransaction");
+        }
+
         setStep("validate", { status: "done" });
+
+        setStep("fund", { status: "active" });
+
+        const payerWallet = pk;
+        const prepare = await apiPost<{
+          walletId: string;
+          creatorWallet: string;
+          payerWallet: string;
+          requiredLamports: number;
+          txBase64: string;
+        }>("/api/launch/prepare", {
+          payerWallet,
+          devBuySol: 0.01,
+        });
+
+        const txBase64 = String(prepare?.txBase64 ?? "");
+        if (!txBase64) throw new Error("Server did not return a funding transaction");
+
+        const fundTx = Transaction.from(base64ToBytes(txBase64));
+        const fundSent = await provider.signAndSendTransaction(fundTx);
+        const fundSig = String(fundSent?.signature ?? fundSent);
+        if (!fundSig) throw new Error("Funding transaction failed to return a signature");
+
+        setStep("fund", { status: "done" });
         setStep("launch", { status: "active" });
 
         const launchBody = {
+          walletId: prepare.walletId,
+          creatorWallet: prepare.creatorWallet,
+          payerWallet: prepare.payerWallet,
           name: draftName.trim(),
           symbol: draftSymbol.trim(),
           description: draftDescription.trim(),
@@ -1385,9 +1435,10 @@ export default function Home() {
           telegramUrl: draftTelegramUrl.trim(),
           discordUrl: draftDiscordUrl.trim(),
           devBuySol: 0.01,
+          fundingSig: fundSig,
         };
 
-        const launched = await apiPost<{ commitmentId: string; tokenMint: string; launchTxSig: string }>("/api/launch", launchBody);
+        const launched = await apiPost<{ commitmentId: string; tokenMint: string; launchTxSig: string }>("/api/launch/execute", launchBody);
         setStep("launch", { status: "done" });
         setStep("finalize", { status: "done" });
 
