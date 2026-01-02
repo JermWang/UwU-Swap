@@ -6,7 +6,7 @@ import { getSafeErrorMessage } from "../../../lib/safeError";
 import { auditLog } from "../../../lib/auditLog";
 import { hasDatabase, getPool } from "../../../lib/db";
 import { getAllowedAdminWallets, getAdminSessionWallet, verifyAdminOrigin } from "../../../lib/adminSession";
-import { privyRefundWalletToFeePayer } from "../../../lib/privy";
+import { privyFindSolanaWalletIdByAddress, privyRefundWalletToFeePayer } from "../../../lib/privy";
 
 export const runtime = "nodejs";
 
@@ -57,26 +57,35 @@ export async function POST(req: Request) {
 
     if (!walletId && creatorWallet) {
       if (!hasDatabase()) {
-        return NextResponse.json({ error: "DATABASE_URL is required to resolve walletId from creatorWallet" }, { status: 400 });
-      }
-      const pool = getPool();
-      const { rows } = await pool.query(
-        `
-        select
-          f.fields->>'walletId' as wallet_id,
-          f.ts_unix
-        from public.audit_logs f
-        where f.fields->>'creatorWallet' = $1
-          and f.fields->>'walletId' is not null
-        order by f.ts_unix desc
-        limit 1
-        `,
-        [creatorWallet]
-      );
-      const row = rows?.[0];
-      walletId = String(row?.wallet_id ?? "").trim();
-      if (!walletId) {
-        return NextResponse.json({ error: "Could not resolve walletId for creatorWallet" }, { status: 404 });
+        const wid = await privyFindSolanaWalletIdByAddress({ address: creatorWallet, maxPages: 20 });
+        walletId = wid || "";
+        if (!walletId) {
+          return NextResponse.json({ error: "Could not resolve walletId for creatorWallet" }, { status: 404 });
+        }
+      } else {
+        const pool = getPool();
+        const { rows } = await pool.query(
+          `
+          select
+            f.fields->>'walletId' as wallet_id,
+            f.ts_unix
+          from public.audit_logs f
+          where f.fields->>'creatorWallet' = $1
+            and f.fields->>'walletId' is not null
+          order by f.ts_unix desc
+          limit 1
+          `,
+          [creatorWallet]
+        );
+        const row = rows?.[0];
+        walletId = String(row?.wallet_id ?? "").trim();
+        if (!walletId) {
+          const wid = await privyFindSolanaWalletIdByAddress({ address: creatorWallet, maxPages: 20 });
+          walletId = wid || "";
+        }
+        if (!walletId) {
+          return NextResponse.json({ error: "Could not resolve walletId for creatorWallet" }, { status: 404 });
+        }
       }
     }
 

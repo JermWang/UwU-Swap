@@ -174,6 +174,44 @@ export async function privyCreateSolanaWallet(): Promise<{ walletId: string; add
   return { walletId, address };
 }
 
+export async function privyFindSolanaWalletIdByAddress(input: {
+  address: string;
+  maxPages?: number;
+}): Promise<string | null> {
+  const address = String(input.address ?? "").trim();
+  if (!address) return null;
+
+  const maxPages = Math.max(1, Math.min(50, Number(input.maxPages ?? 10)));
+
+  let cursor = "";
+  for (let page = 0; page < maxPages; page++) {
+    const q = new URLSearchParams();
+    q.set("chain_type", "solana");
+    q.set("limit", "100");
+    if (cursor) q.set("cursor", cursor);
+
+    const json = await privyFetchJson({
+      method: "GET",
+      path: `/v1/wallets?${q.toString()}`,
+    });
+
+    const data = Array.isArray(json?.data) ? json.data : [];
+    for (const w of data) {
+      const a = String(w?.address ?? "").trim();
+      if (a === address) {
+        const id = String(w?.id ?? "").trim();
+        return id || null;
+      }
+    }
+
+    const next = String(json?.next_cursor ?? "").trim();
+    if (!next) return null;
+    cursor = next;
+  }
+
+  return null;
+}
+
 export async function privySignAndSendSolanaTransaction(input: {
   walletId: string;
   caip2: string;
