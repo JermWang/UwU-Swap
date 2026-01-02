@@ -128,8 +128,11 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: "Funding transaction is not a simple SystemProgram transfer" }, { status: 400 });
       }
 
-      payerWallet = parties.source;
-      creatorWallet = parties.destination;
+      // For a payer->treasury top-up, this sets payerWallet=source, creatorWallet=destination.
+      // For a treasury->launch-wallet funding transfer, this sets creatorWallet=destination.
+      // If caller provided payerWallet explicitly, keep it so they can refund directly back to their wallet.
+      if (!payerWallet) payerWallet = parties.source;
+      if (!creatorWallet) creatorWallet = parties.destination;
 
       if (hasDatabase()) {
         const pool = getPool();

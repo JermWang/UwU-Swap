@@ -107,6 +107,27 @@ function extractPumpMints(parsedTx: any, pumpProgramId: string): string[] {
   return Array.from(out);
 }
 
+function extractSystemTransfers(parsedTx: any): { source: string; destination: string; lamports: number }[] {
+  const out: { source: string; destination: string; lamports: number }[] = [];
+  const ixs = (parsedTx?.transaction?.message?.instructions ?? []) as any[];
+
+  for (const ix of ixs) {
+    const program = String(ix?.program ?? "").trim();
+    const parsed = ix?.parsed;
+    const type = String(parsed?.type ?? "").trim();
+    const info = parsed?.info;
+
+    if (program !== "system" || type !== "transfer") continue;
+    const source = typeof info?.source === "string" ? info.source : "";
+    const destination = typeof info?.destination === "string" ? info.destination : "";
+    const lamports = Number(info?.lamports ?? 0);
+    if (!source || !destination || !Number.isFinite(lamports) || lamports <= 0) continue;
+    out.push({ source, destination, lamports });
+  }
+
+  return out;
+}
+
 export async function POST(req: Request) {
   try {
     const rl = await checkRateLimit(req, { keyPrefix: "launch:trace", limit: 20, windowSeconds: 60 });
@@ -147,6 +168,7 @@ export async function POST(req: Request) {
 
       const deltaLamports = parsed ? getAccountDeltaLamports(parsed, pubkey.toBase58()) : null;
       const pumpMints = parsed ? extractPumpMints(parsed, pumpProgramId) : [];
+      const systemTransfers = parsed ? extractSystemTransfers(parsed) : [];
       const fee = parsed?.meta?.fee != null ? Number(parsed.meta.fee) : null;
 
       out.push({
@@ -157,6 +179,7 @@ export async function POST(req: Request) {
         fee,
         deltaLamports,
         pumpMints,
+        systemTransfers,
       });
     }
 
