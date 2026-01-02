@@ -87,7 +87,11 @@ async function tryPostWebhook(payload: Record<string, unknown>): Promise<void> {
 }
 
 async function tryInsertAuditLog(payload: Record<string, unknown>): Promise<void> {
-  if (!hasDatabase()) return;
+  try {
+    if (!hasDatabase()) return;
+  } catch {
+    return;
+  }
   try {
     await ensureSchema();
     const pool = getPool();
@@ -102,16 +106,25 @@ async function tryInsertAuditLog(payload: Record<string, unknown>): Promise<void
 }
 
 export async function auditLog(event: string, fields?: AuditFields): Promise<void> {
-  const tsUnix = nowUnix();
-  const sanitized = fields ? sanitizeFields(fields) : {};
-  const payload: Record<string, unknown> = {
-    ts: new Date(tsUnix * 1000).toISOString(),
-    ts_unix: tsUnix,
-    event,
-    fields: sanitized,
-  };
+  try {
+    const tsUnix = nowUnix();
+    const sanitized = fields ? sanitizeFields(fields) : {};
+    const payload: Record<string, unknown> = {
+      ts: new Date(tsUnix * 1000).toISOString(),
+      ts_unix: tsUnix,
+      event,
+      fields: sanitized,
+    };
 
-  console.log(JSON.stringify(payload));
-  await tryInsertAuditLog(payload);
-  void tryPostWebhook(payload);
+    try {
+      console.log(JSON.stringify(payload));
+    } catch {
+      console.log(String(event ?? ""));
+    }
+
+    await tryInsertAuditLog(payload);
+    void tryPostWebhook(payload);
+  } catch {
+    // ignore
+  }
 }
