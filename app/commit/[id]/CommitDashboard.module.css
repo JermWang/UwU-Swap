@@ -931,6 +931,7 @@
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(0, 0, 0, 0.16);
   cursor: pointer;
+  min-width: 0;
 }
 
 .voteRow:hover {
@@ -948,9 +949,12 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 10px;
+  min-width: 0;
 }
 
 .voteRowTitle {
+  flex: 1;
+  min-width: 0;
   font-size: 13px;
   font-weight: 800;
   color: var(--fg);
@@ -960,6 +964,7 @@
 }
 
 .voteRowAmount {
+  flex-shrink: 0;
   font-size: 12px;
   font-weight: 800;
   color: var(--fg);
