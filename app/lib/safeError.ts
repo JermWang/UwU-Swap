@@ -24,6 +24,26 @@ export function getSafeErrorMessage(err: unknown): string {
 
   if (lower.includes("database_url is required")) return "DATABASE_URL is required";
 
+  if (lower.includes("privy_app_id") && lower.includes("privy_app_secret") && lower.includes("required")) {
+    return "PRIVY_APP_ID and PRIVY_APP_SECRET are required";
+  }
+
+  if (lower.includes("escrow_fee_payer_secret_key") && lower.includes("required")) {
+    return "ESCROW_FEE_PAYER_SECRET_KEY is required";
+  }
+
+  if (lower.includes("solana_rpc_url") && lower.includes("required")) {
+    return "SOLANA_RPC_URL is required";
+  }
+
+  if (lower.startsWith("privy request failed")) {
+    return raw;
+  }
+
+  if (lower.includes("transaction confirmation timeout")) {
+    return "Transaction confirmation timeout";
+  }
+
   if (lower.includes("cts_mock_mode")) return "Service configuration error";
 
   if (lower.includes("invalid database_url")) return "Invalid DATABASE_URL";

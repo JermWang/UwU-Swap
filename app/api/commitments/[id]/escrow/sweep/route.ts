@@ -59,7 +59,12 @@ export async function POST(req: Request, ctx: { params: { id: string } }) {
     const creatorPubkey = creator.toBase58();
 
     const msg = expectedSweepMessage({ commitmentId, timestampUnix: Math.floor(timestampUnix) });
-    const signature = bs58.decode(signatureB58);
+    let signature: Uint8Array;
+    try {
+      signature = bs58.decode(signatureB58);
+    } catch {
+      return NextResponse.json({ error: "Invalid signature encoding" }, { status: 400 });
+    }
     const ok = nacl.sign.detached.verify(new TextEncoder().encode(msg), signature, creator.toBytes());
     if (!ok) return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
 
