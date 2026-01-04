@@ -854,6 +854,10 @@
   max-width: 190px;
 }
 
+ .milestoneActionSelect option {
+   color: #111;
+ }
+
 .milestoneActionSelect:disabled {
   opacity: 0.6;
   cursor: not-allowed;
