@@ -34,6 +34,27 @@ type WithdrawalData = {
   solscanUrl: string;
 };
 
+type FailureTransferData = {
+  kind: "milestone_failure_buyback" | "milestone_failure_voter_pot_to_treasury";
+  milestoneId: string;
+  distributionId: string;
+  amountLamports: number;
+  createdAtUnix: number;
+  txSig: string;
+  solscanUrl: string;
+};
+
+type VoterPayoutData = {
+  kind: "milestone_failure_voter_claim";
+  milestoneId: string;
+  distributionId: string;
+  walletPubkey: string;
+  claimedAtUnix: number;
+  amountLamports: number;
+  txSig: string;
+  solscanUrl: string;
+};
+
 type ProjectData = {
   commitment: {
     id: string;
@@ -67,6 +88,8 @@ type ProjectData = {
     milestonesClaimable: number;
   };
   withdrawals: WithdrawalData[];
+  failureTransfers?: FailureTransferData[];
+  voterPayouts?: VoterPayoutData[];
 };
 
 type SummaryData = {
@@ -100,6 +123,16 @@ function shortWallet(pk: string): string {
   if (!s) return "";
   if (s.length <= 10) return s;
   return `${s.slice(0, 4)}…${s.slice(-4)}`;
+}
+
+function effectiveUnlockLamports(m: MilestoneData, totalFundedLamports: number): number {
+  const explicit = Number(m.unlockLamports ?? 0);
+  if (Number.isFinite(explicit) && explicit > 0) return Math.floor(explicit);
+  const pct = Number(m.unlockPercent ?? 0);
+  const total = Number(totalFundedLamports ?? 0);
+  if (!Number.isFinite(pct) || pct <= 0) return 0;
+  if (!Number.isFinite(total) || total <= 0) return 0;
+  return Math.floor((total * pct) / 100);
 }
 
 function formatDate(unix: number): string {
@@ -921,6 +954,7 @@ export default function CreatorDashboardPage() {
                   const canComplete = canManageSelectedProject && m.completedAtUnix == null && m.status === "locked";
                   const canClaim = canManageSelectedProject && m.status === "claimable";
                   const dueLabel = m.dueAtUnix ? `Due ${formatDate(m.dueAtUnix)}` : "";
+                  const unlockLamports = effectiveUnlockLamports(m, selectedProject.commitment.totalFundedLamports);
 
                   return (
                     <div key={m.id} className={`${styles.milestoneItem} ${statusClass}`}>
@@ -1030,7 +1064,7 @@ export default function CreatorDashboardPage() {
                           </div>
                         ) : null}
                       </div>
-                      <div className={styles.milestoneAmount}>{fmtSol(m.unlockLamports)} SOL</div>
+                      <div className={styles.milestoneAmount}>{fmtSol(unlockLamports)} SOL</div>
 
                       <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-end" }}>
                         {canEdit && !isEditing ? (
@@ -1120,6 +1154,64 @@ export default function CreatorDashboardPage() {
                       </a>
                     </div>
                   ))}
+                </div>
+              </div>
+            )}
+
+            {((selectedProject.failureTransfers ?? []).length > 0 || (selectedProject.voterPayouts ?? []).length > 0) && (
+              <div className={styles.withdrawalsSection}>
+                <h3 className={styles.withdrawalsHeader}>On-Chain Transfers</h3>
+                <div className={styles.withdrawalsList}>
+                  {(
+                    ([] as Array<
+                      | ({ kind: "milestone_release" } & WithdrawalData)
+                      | FailureTransferData
+                      | VoterPayoutData
+                    >)
+                      .concat(selectedProject.withdrawals.map((w) => ({ ...w, kind: "milestone_release" as const })))
+                      .concat((selectedProject.failureTransfers ?? []) as any)
+                      .concat((selectedProject.voterPayouts ?? []) as any)
+                      .sort((a: any, b: any) => {
+                        const ta = Number(a.releasedAtUnix ?? a.claimedAtUnix ?? a.createdAtUnix ?? 0);
+                        const tb = Number(b.releasedAtUnix ?? b.claimedAtUnix ?? b.createdAtUnix ?? 0);
+                        return tb - ta;
+                      })
+                  ).map((evt: any) => {
+                    const title =
+                      evt.kind === "milestone_release"
+                        ? `Milestone release: ${String(evt.milestoneTitle ?? "") || evt.milestoneId}`
+                        : evt.kind === "milestone_failure_buyback"
+                          ? `Milestone failure buyback: ${String(evt.milestoneId)}`
+                          : evt.kind === "milestone_failure_voter_pot_to_treasury"
+                            ? `Milestone failure voter pot: ${String(evt.milestoneId)}`
+                            : evt.kind === "milestone_failure_voter_claim"
+                              ? `Voter claim: ${shortWallet(String(evt.walletPubkey ?? ""))}`
+                              : "Transfer";
+
+                    const unix = Number(evt.releasedAtUnix ?? evt.claimedAtUnix ?? evt.createdAtUnix ?? 0);
+                    return (
+                      <div key={`${evt.kind}:${evt.txSig}`} className={styles.withdrawalItem}>
+                        <div className={styles.withdrawalInfo}>
+                          <div className={styles.withdrawalTitle}>{title}</div>
+                          <div className={styles.withdrawalDate}>{unix > 0 ? formatDateTime(unix) : "—"}</div>
+                        </div>
+                        <div className={styles.withdrawalAmount}>{fmtSol(Number(evt.amountLamports ?? 0))} SOL</div>
+                        <a
+                          href={String(evt.solscanUrl ?? "")}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className={styles.withdrawalLink}
+                          title="View on Solscan"
+                        >
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                            <polyline points="15 3 21 3 21 9" />
+                            <line x1="10" y1="14" x2="21" y2="3" />
+                          </svg>
+                        </a>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}

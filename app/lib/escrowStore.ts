@@ -1275,9 +1275,74 @@ export async function listRewardVoterSnapshots(commitmentId: string): Promise<Re
   };
  }
 
- export async function tryAcquireMilestoneFailureDistributionCreate(input: {
+export async function listMilestoneFailureDistributionsByCommitmentId(commitmentId: string): Promise<MilestoneFailureDistributionRecord[]> {
+  await ensureSchema();
+  ensureMockSeeded();
+
+  const id = String(commitmentId);
+  if (!id) return [];
+
+  if (!hasDatabase()) {
+    return Array.from(mem.milestoneFailureDistributionsByCommitmentMilestone.values()).filter((d) => d.commitmentId === id);
+  }
+
+  const pool = getPool();
+  const res = await pool.query(
+    `select id, commitment_id, milestone_id, created_at_unix, forfeited_lamports, buyback_lamports, voter_pot_lamports,
+            ship_buyback_treasury_pubkey, buyback_tx_sig, voter_pot_tx_sig, status
+     from milestone_failure_distributions where commitment_id=$1`,
+    [id]
+  );
+
+  return (res.rows ?? []).map((row: any) => ({
+    id: String(row.id),
+    commitmentId: String(row.commitment_id),
+    milestoneId: String(row.milestone_id),
+    createdAtUnix: Number(row.created_at_unix),
+    forfeitedLamports: Number(row.forfeited_lamports),
+    buybackLamports: Number(row.buyback_lamports),
+    voterPotLamports: Number(row.voter_pot_lamports),
+    shipBuybackTreasuryPubkey: String(row.ship_buyback_treasury_pubkey),
+    buybackTxSig: String(row.buyback_tx_sig),
+    voterPotTxSig: row.voter_pot_tx_sig == null ? undefined : String(row.voter_pot_tx_sig),
+    status: String(row.status) as MilestoneFailureDistributionStatus,
+  }));
+}
+
+export async function listMilestoneFailureDistributionClaims(input: { distributionId: string }): Promise<MilestoneFailureDistributionClaim[]> {
+  await ensureSchema();
+  ensureMockSeeded();
+
+  const distributionId = String(input.distributionId);
+  if (!distributionId) return [];
+
+  if (!hasDatabase()) {
+    const byWallet = mem.milestoneFailureClaimsByDistributionId.get(distributionId);
+    return byWallet ? Array.from(byWallet.values()) : [];
+  }
+
+  const pool = getPool();
+  const res = await pool.query(
+    "select distribution_id, wallet_pubkey, claimed_at_unix, amount_lamports, tx_sig from milestone_failure_distribution_claims where distribution_id=$1",
+    [distributionId]
+  );
+
+  return (res.rows ?? []).map((row: any) => {
+    const txSigRaw = String(row.tx_sig ?? "");
+    const txSig = txSigRaw.trim().length ? txSigRaw.trim() : null;
+    return {
+      distributionId: String(row.distribution_id),
+      walletPubkey: String(row.wallet_pubkey),
+      claimedAtUnix: Number(row.claimed_at_unix),
+      amountLamports: Number(row.amount_lamports),
+      txSig,
+    } as MilestoneFailureDistributionClaim;
+  });
+}
+
+export async function tryAcquireMilestoneFailureDistributionCreate(input: {
   distribution: MilestoneFailureDistributionRecord;
- }): Promise<{ acquired: true } | { acquired: false; existing: MilestoneFailureDistributionRecord }> {
+}): Promise<{ acquired: true } | { acquired: false; existing: MilestoneFailureDistributionRecord }> {
   await ensureSchema();
   ensureMockSeeded();
 

@@ -7,6 +7,8 @@ import {
   getCommitment,
   getRewardApprovalThreshold,
   getRewardMilestoneVoteCounts,
+  listMilestoneFailureDistributionsByCommitmentId,
+  listMilestoneFailureDistributionClaims,
   listCommitments,
   normalizeRewardMilestonesClaimable,
   publicView,
@@ -25,6 +27,18 @@ function computeUnlockedLamports(milestones: RewardMilestone[]): number {
     if (m.status === "claimable" || m.status === "released") return acc + Number(m.unlockLamports || 0);
     return acc;
   }, 0);
+}
+
+function solscanTxUrl(sig: string): string {
+  return `https://solscan.io/tx/${encodeURIComponent(sig)}`;
+}
+
+function normalizeTxSig(sig: string | null | undefined): string | null {
+  const t = String(sig ?? "").trim();
+  if (!t) return null;
+  const lowered = t.toLowerCase();
+  if (lowered === "pending" || lowered === "none") return null;
+  return t;
 }
 
 export async function GET(_req: Request, ctx: { params: { wallet: string } }) {
@@ -162,15 +176,73 @@ export async function GET(_req: Request, ctx: { params: { wallet: string } }) {
       }
 
       const withdrawals = normalized.milestones
-        .filter((m) => m.status === "released" && m.releasedTxSig)
+        .filter((m): m is RewardMilestone & { releasedTxSig: string } => {
+          if (m.status !== "released") return false;
+          const sig = String((m as any).releasedTxSig ?? "").trim();
+          return sig.length > 0;
+        })
         .map((m) => ({
           milestoneId: m.id,
           milestoneTitle: m.title,
           amountLamports: m.unlockLamports,
           releasedAtUnix: m.releasedAtUnix,
           txSig: m.releasedTxSig,
-          solscanUrl: `https://solscan.io/tx/${m.releasedTxSig}`,
+          solscanUrl: solscanTxUrl(m.releasedTxSig),
         }));
+
+      const failureDistributions = await listMilestoneFailureDistributionsByCommitmentId(commitment.id);
+      const failureTransfers = failureDistributions
+        .flatMap((d) => {
+          const out: any[] = [];
+          const buybackTxSig = normalizeTxSig(d.buybackTxSig);
+          if (buybackTxSig) {
+            out.push({
+              kind: "milestone_failure_buyback",
+              milestoneId: d.milestoneId,
+              distributionId: d.id,
+              amountLamports: Number(d.buybackLamports ?? 0),
+              createdAtUnix: Number(d.createdAtUnix ?? 0),
+              txSig: buybackTxSig,
+              solscanUrl: solscanTxUrl(buybackTxSig),
+            });
+          }
+
+          const voterPotTxSig = normalizeTxSig(d.voterPotTxSig);
+          const voterPotToTreasuryLamports = Math.max(0, Number(d.forfeitedLamports ?? 0) - Number(d.buybackLamports ?? 0) - Number(d.voterPotLamports ?? 0));
+          if (voterPotTxSig) {
+            out.push({
+              kind: "milestone_failure_voter_pot_to_treasury",
+              milestoneId: d.milestoneId,
+              distributionId: d.id,
+              amountLamports: voterPotToTreasuryLamports,
+              createdAtUnix: Number(d.createdAtUnix ?? 0),
+              txSig: voterPotTxSig,
+              solscanUrl: solscanTxUrl(voterPotTxSig),
+            });
+          }
+
+          return out;
+        })
+        .filter((x) => Number(x.amountLamports ?? 0) > 0);
+
+      const voterPayouts: any[] = [];
+      for (const d of failureDistributions) {
+        const claims = await listMilestoneFailureDistributionClaims({ distributionId: d.id });
+        for (const c of claims) {
+          const txSig = normalizeTxSig(c.txSig);
+          if (!txSig) continue;
+          voterPayouts.push({
+            kind: "milestone_failure_voter_claim",
+            milestoneId: d.milestoneId,
+            distributionId: d.id,
+            walletPubkey: c.walletPubkey,
+            claimedAtUnix: c.claimedAtUnix,
+            amountLamports: c.amountLamports,
+            txSig,
+            solscanUrl: solscanTxUrl(txSig),
+          });
+        }
+      }
 
       projects.push({
         commitment: publicView(commitment),
@@ -195,6 +267,8 @@ export async function GET(_req: Request, ctx: { params: { wallet: string } }) {
           milestonesClaimable,
         },
         withdrawals,
+        failureTransfers,
+        voterPayouts,
         approvalCounts,
         approvalThreshold,
       });
