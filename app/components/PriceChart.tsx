@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type Props = {
   tokenMint: string;
@@ -36,9 +36,6 @@ function pickBestPair(pairs: DexScreenerPair[], chain: string): DexScreenerPair 
 export default function PriceChart({ tokenMint, chain = "solana", height = 400, theme = "dark" }: Props) {
   const [pair, setPair] = useState<DexScreenerPair | null>(null);
   const [pairLoading, setPairLoading] = useState(false);
-  const [iframeLoaded, setIframeLoaded] = useState(false);
-  const [hasError, setHasError] = useState(false);
-  const iframeLoadedRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -67,88 +64,25 @@ export default function PriceChart({ tokenMint, chain = "solana", height = 400, 
     };
   }, [tokenMint, chain]);
 
-  const embedSrc = useMemo(() => {
-    const pairAddress = String((pair as any)?.pairAddress ?? "").trim();
-    const id = pairAddress || String(tokenMint ?? "").trim();
-    if (!id) return "";
-    const themeParam = theme === "light" ? "light" : "dark";
-    return `https://dexscreener.com/${encodeURIComponent(chain)}/${encodeURIComponent(id)}?embed=1&theme=${themeParam}&info=0`;
-  }, [pair, chain, theme, tokenMint]);
-
-  useEffect(() => {
-    setIframeLoaded(false);
-    setHasError(false);
-    iframeLoadedRef.current = false;
-    if (!embedSrc) return;
-
-    const t = window.setTimeout(() => {
-      if (!iframeLoadedRef.current) setHasError(true);
-    }, 15000);
-
-    return () => {
-      window.clearTimeout(t);
-    };
-  }, [embedSrc]);
-
   const viewDexUrl = useMemo(() => {
     const pairAddress = String((pair as any)?.pairAddress ?? "").trim();
     const id = pairAddress || tokenMint;
     return `https://dexscreener.com/${encodeURIComponent(chain)}/${encodeURIComponent(id)}`;
   }, [pair, tokenMint, chain]);
 
-  const viewBirdeyeUrl = useMemo(() => {
-    return `https://birdeye.so/token/${encodeURIComponent(tokenMint)}?chain=${encodeURIComponent(chain)}`;
-  }, [tokenMint, chain]);
-
   if (!tokenMint) return null;
 
   return (
     <div className="birdeyeChartWrap">
-      {!iframeLoaded && !hasError && (
-        <div className="birdeyeChartLoading">
-          <div className="birdeyeChartSpinner" />
-          <span>{pairLoading ? "Finding market…" : "Loading chart..."}</span>
-        </div>
-      )}
-
-      {hasError || !embedSrc ? (
-        <div className="birdeyeChartError">
-          <span>Chart unavailable</span>
-          <a href={viewDexUrl} target="_blank" rel="noopener noreferrer" className="birdeyeChartLink">
-            View on DexScreener →
-          </a>
-          <a href={viewBirdeyeUrl} target="_blank" rel="noopener noreferrer" className="birdeyeChartLink">
-            View on Birdeye →
-          </a>
-        </div>
-      ) : null}
-
-      {embedSrc ? (
-        <iframe
-          key={embedSrc}
-          src={embedSrc}
-          width="100%"
-          height={height}
-          frameBorder="0"
-          allowFullScreen
-          style={{
-            display: hasError ? "none" : "block",
-            opacity: iframeLoaded ? 1 : 0,
-            transition: "opacity 0.3s ease",
-            borderRadius: 12,
-          }}
-          onLoad={() => {
-            iframeLoadedRef.current = true;
-            setIframeLoaded(true);
-            setHasError(false);
-          }}
-          onError={() => {
-            iframeLoadedRef.current = false;
-            setIframeLoaded(false);
-            setHasError(true);
-          }}
-        />
-      ) : null}
+      <div className="birdeyeChartLoading" style={{ position: "relative" }}>
+        <div className="birdeyeChartSpinner" style={{ opacity: pairLoading ? 1 : 0 }} />
+        <span style={{ textAlign: "center", maxWidth: 520 }}>
+          {pairLoading ? "Finding market…" : "Open the live chart on DexScreener."}
+        </span>
+        <a href={viewDexUrl} target="_blank" rel="noopener noreferrer" className="birdeyeChartLink">
+          View on DexScreener →
+        </a>
+      </div>
     </div>
   );
 }

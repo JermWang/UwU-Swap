@@ -1112,11 +1112,11 @@ export default function CommitDashboardClient(props: Props) {
                 ) : null}
                 {props.tokenMint ? (
                   <a
-                    href={`https://birdeye.so/token/${encodeURIComponent(props.tokenMint)}?chain=solana`}
+                    href={`https://dexscreener.com/solana/${encodeURIComponent(props.tokenMint)}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className={styles.projectSocialLink}
-                    title="View on Birdeye"
+                    title="View on DexScreener"
                   >
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
