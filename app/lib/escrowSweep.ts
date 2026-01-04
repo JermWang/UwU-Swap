@@ -3,7 +3,7 @@ import { Keypair, PublicKey, SystemProgram, Transaction } from "@solana/web3.js"
 import { auditLog } from "./auditLog";
 import { getClaimableCreatorFeeLamports, buildCollectCreatorFeeInstruction } from "./pumpfun";
 import { releasePumpfunCreatorFeeClaimLock, tryAcquirePumpfunCreatorFeeClaimLock } from "./pumpfunClaimLock";
-import { privySignAndSendSolanaTransaction } from "./privy";
+import { privySignSolanaTransaction } from "./privy";
 import { getBalanceLamports, getConnection, confirmTransactionSignature, keypairFromBase58Secret } from "./solana";
 import { getCommitment, getEscrowSignerRef, listCommitments, updateRewardTotalsAndMilestones } from "./escrowStore";
 
@@ -85,9 +85,9 @@ export async function sweepManagedCreatorFeesToEscrow(input: { commitmentId: str
     }
 
     let lastErr: unknown = null;
-    for (let attempt = 0; attempt < 2; attempt++) {
+    for (let attempt = 0; attempt < 3; attempt++) {
       try {
-        const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("processed");
+        const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
 
         const tx = new Transaction();
         tx.feePayer = feePayer.publicKey;
@@ -106,8 +106,11 @@ export async function sweepManagedCreatorFeesToEscrow(input: { commitmentId: str
 
         tx.partialSign(feePayer);
 
-        const txBase64 = tx.serialize({ requireAllSignatures: false }).toString("base64");
-        const { signature } = await privySignAndSendSolanaTransaction({ walletId: privyWalletId, caip2: SOLANA_CAIP2, transactionBase64: txBase64 });
+        const txBase64 = tx.serialize({ requireAllSignatures: false, verifySignatures: false }).toString("base64");
+        const signed = await privySignSolanaTransaction({ walletId: privyWalletId, transactionBase64: txBase64 });
+
+        const raw = Buffer.from(String(signed.signedTransactionBase64), "base64");
+        const signature = await connection.sendRawTransaction(raw, { skipPreflight: false, preflightCommitment: "processed", maxRetries: 2 });
 
         await confirmTransactionSignature({ connection, signature, blockhash, lastValidBlockHeight });
 
@@ -142,8 +145,14 @@ export async function sweepManagedCreatorFeesToEscrow(input: { commitmentId: str
         lastErr = e;
         const msg = String((e as any)?.message ?? e ?? "");
         const lower = msg.toLowerCase();
-        const retryable = (lower.includes("blockhash") && (lower.includes("expired") || lower.includes("not found"))) || lower.includes("block height exceeded");
-        if (!retryable || attempt >= 1) break;
+        const retryable =
+          (lower.includes("blockhash") && (lower.includes("expired") || lower.includes("not found"))) ||
+          lower.includes("block height exceeded") ||
+          lower.includes("blockheight exceeded") ||
+          lower.includes("timed out") ||
+          lower.includes("timeout");
+        if (!retryable || attempt >= 2) break;
+        await new Promise((r) => setTimeout(r, 350 + attempt * 450));
       }
     }
 
@@ -156,6 +165,10 @@ export async function sweepManagedCreatorFeesToEscrow(input: { commitmentId: str
   } catch (e) {
     return { id: commitmentId, ok: false, status: 500, error: String((e as any)?.message ?? e ?? "Sweep failed") };
   } finally {
-    await releasePumpfunCreatorFeeClaimLock({ creatorPubkey: creatorWallet.toBase58() });
+    try {
+      await releasePumpfunCreatorFeeClaimLock({ creatorPubkey: creatorWallet.toBase58() });
+    } catch {
+      // ignore
+    }
   }
 }
