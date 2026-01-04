@@ -1,10 +1,10 @@
-import { PublicKey, SystemProgram, Transaction } from "@solana/web3.js";
+import { Keypair, PublicKey, SystemProgram, Transaction } from "@solana/web3.js";
 
 import { auditLog } from "./auditLog";
 import { getClaimableCreatorFeeLamports, buildCollectCreatorFeeInstruction } from "./pumpfun";
 import { releasePumpfunCreatorFeeClaimLock, tryAcquirePumpfunCreatorFeeClaimLock } from "./pumpfunClaimLock";
 import { privySignAndSendSolanaTransaction } from "./privy";
-import { getConnection, confirmTransactionSignature } from "./solana";
+import { getBalanceLamports, getConnection, confirmTransactionSignature, keypairFromBase58Secret } from "./solana";
 import { getCommitment, getEscrowSignerRef, listCommitments, updateRewardTotalsAndMilestones } from "./escrowStore";
 
 const SOLANA_CAIP2 = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp"; // mainnet
@@ -13,6 +13,12 @@ const CREATOR_FEE_SWEEP_KEEP_LAMPORTS = (() => {
   const raw = Number(process.env.CTS_CREATOR_FEE_SWEEP_KEEP_LAMPORTS ?? "");
   return Number.isFinite(raw) && raw >= 0 ? Math.floor(raw) : 25_000;
 })();
+
+function getSweepFeePayer(): Keypair {
+  const secret = String(process.env.ESCROW_FEE_PAYER_SECRET_KEY ?? "").trim();
+  if (!secret) throw new Error("ESCROW_FEE_PAYER_SECRET_KEY is required");
+  return keypairFromBase58Secret(secret);
+}
 
 export async function sweepManagedCreatorFeesToEscrow(input: { commitmentId: string; actor?: { kind: "cron" | "admin" | "creator"; walletPubkey?: string } }): Promise<any> {
   const commitmentId = String(input.commitmentId ?? "").trim();
@@ -65,8 +71,24 @@ export async function sweepManagedCreatorFeesToEscrow(input: { commitmentId: str
     const sameWallet = creatorWallet.toBase58() === escrowPubkey.toBase58();
     const transferAmount = sameWallet ? 0 : Math.max(0, claimableLamports - CREATOR_FEE_SWEEP_KEEP_LAMPORTS);
 
+    const feePayer = getSweepFeePayer();
+    const feePayerBalanceLamports = await getBalanceLamports(connection, feePayer.publicKey);
+    const minFeePayerLamports = 2_000_000; // 0.002 SOL
+    if (!Number.isFinite(feePayerBalanceLamports) || feePayerBalanceLamports < minFeePayerLamports) {
+      await releasePumpfunCreatorFeeClaimLock({ creatorPubkey: creatorWallet.toBase58() });
+      return {
+        id: commitmentId,
+        ok: false,
+        status: 503,
+        error: "Escrow fee payer has insufficient SOL balance",
+        feePayerPubkey: feePayer.publicKey.toBase58(),
+        feePayerBalanceLamports,
+        hint: "Top up the fee payer wallet (ESCROW_FEE_PAYER_SECRET_KEY) and retry.",
+      };
+    }
+
     const tx = new Transaction();
-    tx.feePayer = creatorWallet;
+    tx.feePayer = feePayer.publicKey;
     tx.recentBlockhash = blockhash;
     tx.lastValidBlockHeight = lastValidBlockHeight;
     tx.add(claimIx);
@@ -79,6 +101,8 @@ export async function sweepManagedCreatorFeesToEscrow(input: { commitmentId: str
         })
       );
     }
+
+    tx.partialSign(feePayer);
 
     const txBase64 = tx.serialize({ requireAllSignatures: false }).toString("base64");
     const { signature } = await privySignAndSendSolanaTransaction({ walletId: privyWalletId, caip2: SOLANA_CAIP2, transactionBase64: txBase64 });

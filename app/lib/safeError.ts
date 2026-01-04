@@ -44,6 +44,18 @@ export function getSafeErrorMessage(err: unknown): string {
     return "Transaction confirmation timeout";
   }
 
+  if (lower.includes("insufficient funds") || lower.includes("insufficient lamports")) {
+    return "Insufficient SOL for transaction fees";
+  }
+
+  if (lower.includes("blockhash not found") || lower.includes("blockhash") && lower.includes("expired")) {
+    return "RPC error (blockhash expired)";
+  }
+
+  if (lower.includes("transaction simulation failed")) {
+    return "Transaction simulation failed";
+  }
+
   if (lower.includes("cts_mock_mode")) return "Service configuration error";
 
   if (lower.includes("invalid database_url")) return "Invalid DATABASE_URL";
