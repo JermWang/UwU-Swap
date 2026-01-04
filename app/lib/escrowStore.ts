@@ -1789,7 +1789,7 @@ export async function getRewardMilestoneApprovalCounts(commitmentId: string): Pr
 
 export function getRewardApprovalThreshold(): number {
   const raw = Number(process.env.REWARD_APPROVAL_THRESHOLD ?? "");
-  const count = Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 20;
+  const count = Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 15;
   return count;
 }
 
