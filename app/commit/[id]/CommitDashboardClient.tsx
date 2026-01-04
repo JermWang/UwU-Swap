@@ -205,6 +205,17 @@ function unixToLocal(unix: number): string {
   return new Date(unix * 1000).toLocaleString();
 }
 
+function formatCountdown(secondsTotal: number): string {
+  const seconds = Math.max(0, Math.floor(secondsTotal));
+  const d = Math.floor(seconds / 86400);
+  const h = Math.floor((seconds % 86400) / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  if (d > 0) return `${d}d ${h}h`;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m ${String(s).padStart(2, "0")}s`;
+}
+
 function toDatetimeLocalValue(d: Date): string {
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
@@ -241,6 +252,16 @@ function solToLamports(sol: string): number {
 
 export default function CommitDashboardClient(props: Props) {
   const { escrowPubkey, explorerUrl, id, canMarkFailure, canMarkSuccess, kind, projectProfile: projectProfileProp } = props;
+
+  const baseClientUnix = useMemo(() => Math.floor(Date.now() / 1000), []);
+  const [clientUnix, setClientUnix] = useState<number>(baseClientUnix);
+  const serverNowUnix = Number(props.nowUnix ?? 0);
+  const liveNowUnix = serverNowUnix > 0 ? serverNowUnix + (clientUnix - baseClientUnix) : clientUnix;
+
+  useEffect(() => {
+    const t = setInterval(() => setClientUnix(Math.floor(Date.now() / 1000)), 1000);
+    return () => clearInterval(t);
+  }, []);
 
   const router = useRouter();
   const toast = useToast();
@@ -1200,7 +1221,7 @@ export default function CommitDashboardClient(props: Props) {
         {/* Prominent Holder Voting Section */}
         {kind === "creator_reward" && props.tokenMint ? (
           (() => {
-            const nowUnix = Number(props.nowUnix ?? 0);
+            const nowUnix = liveNowUnix;
             const cutoffSeconds = 24 * 60 * 60;
             const voteWindow = (m: RewardMilestone): { startUnix: number; endUnix: number } | null => {
               const completedAtUnix = Number(m.completedAtUnix ?? 0);
@@ -1362,7 +1383,7 @@ export default function CommitDashboardClient(props: Props) {
 
             {props.status !== "failed" ? (
               (() => {
-                const nowUnix = Number(props.nowUnix ?? 0);
+                const nowUnix = liveNowUnix;
 
                 const cutoffSeconds = 24 * 60 * 60;
                 const voteWindow = (m: RewardMilestone): { startUnix: number; endUnix: number } | null => {
@@ -1583,7 +1604,7 @@ export default function CommitDashboardClient(props: Props) {
 
             <div className={styles.milestoneList}>
               {(props.milestones ?? []).map((m) => {
-                const nowUnix = Number(props.nowUnix ?? 0);
+                const nowUnix = liveNowUnix;
                 const canRelease = m.status === "claimable";
 
                 const balanceLamports = Number(props.balanceLamports ?? 0);
@@ -1629,6 +1650,19 @@ export default function CommitDashboardClient(props: Props) {
                   return "Not completed yet";
                 })();
 
+                const reviewOpenedAtUnix = Number((m as any).reviewOpenedAtUnix ?? 0);
+                const hasReview = Number.isFinite(reviewOpenedAtUnix) && reviewOpenedAtUnix > 0;
+                const dueAtUnix = Number(m.dueAtUnix ?? 0);
+                const showVoteCountdown =
+                  m.status === "locked" &&
+                  m.completedAtUnix != null &&
+                  !hasReview &&
+                  Number.isFinite(dueAtUnix) &&
+                  dueAtUnix > 0 &&
+                  nowUnix > 0 &&
+                  nowUnix < dueAtUnix;
+                const voteCountdownSeconds = showVoteCountdown ? Math.max(0, Math.floor(dueAtUnix - nowUnix)) : 0;
+
                 return (
                   <div key={m.id} className={styles.milestoneRow}>
                     <div className={styles.milestoneRail}>
@@ -1657,6 +1691,12 @@ export default function CommitDashboardClient(props: Props) {
                           <div className={styles.milestoneMeta}>
                             <span className={styles.milestonePill}>{statusLabel}</span>
                             <span className={styles.milestoneMuted}>{timing}</span>
+                            {showVoteCountdown ? (
+                              <span className={styles.voteCountdownPill}>
+                                Vote opens in {formatCountdown(voteCountdownSeconds)}
+                                <span className={styles.voteCountdownAt}>({unixToLocal(dueAtUnix)})</span>
+                              </span>
+                            ) : null}
                           </div>
                           {showApprovals && m.completedAtUnix != null ? (
                             <div className={styles.smallNote} style={{ marginTop: 6 }}>
