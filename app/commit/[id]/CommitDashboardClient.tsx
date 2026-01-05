@@ -290,10 +290,24 @@ export default function CommitDashboardClient(props: Props) {
     }
   }
 
+  function solscanTxUrl(signature: string): string {
+    const sig = String(signature ?? "").trim();
+    const base = `https://solscan.io/tx/${encodeURIComponent(sig)}`;
+    const c = String(process.env.NEXT_PUBLIC_SOLANA_CLUSTER ?? "mainnet-beta").trim();
+    if (!c || c === "mainnet-beta") return base;
+    return `${base}?cluster=${encodeURIComponent(c)}`;
+  }
+
+  function shortSig(signature: string): string {
+    const s = String(signature ?? "").trim();
+    if (s.length <= 12) return s;
+    return `${s.slice(0, 4)}…${s.slice(-4)}`;
+  }
+
   function openExplorerTx(signature: string) {
     const sig = String(signature ?? "").trim();
     if (!sig) return;
-    window.open(`https://solscan.io/tx/${encodeURIComponent(sig)}`, "_blank", "noopener,noreferrer");
+    window.open(solscanTxUrl(sig), "_blank", "noopener,noreferrer");
   }
 
   function closeAdminModal(opts?: { refresh?: boolean }) {
@@ -1708,7 +1722,16 @@ export default function CommitDashboardClient(props: Props) {
                       </div>
 
                       {m.status === "released" && m.releasedTxSig ? (
-                        <div className={styles.milestoneSmallMono}>releasedTxSig={m.releasedTxSig}</div>
+                        <div className={styles.milestoneSmallMono}>
+                          <a
+                            href={solscanTxUrl(m.releasedTxSig)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{ color: "rgba(255,255,255,0.72)", textDecoration: "none" }}
+                          >
+                            View on Solscan ({shortSig(m.releasedTxSig)})
+                          </a>
+                        </div>
                       ) : null}
 
                       {m.status === "failed" ? (
