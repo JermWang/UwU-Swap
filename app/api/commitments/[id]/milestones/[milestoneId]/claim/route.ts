@@ -24,6 +24,7 @@ import {
   getBalanceLamports,
   getChainUnixTime,
   getConnection,
+  findRecentSystemTransferSignature,
   keypairFromBase58Secret,
   transferLamports,
   transferLamportsFromPrivyWallet,
@@ -197,14 +198,28 @@ export async function POST(req: Request, ctx: { params: { id: string; milestoneI
         );
       }
 
-      if (existing.txSig) {
+      const recoveredTxSig =
+        existing.txSig ??
+        (await findRecentSystemTransferSignature({
+          connection,
+          fromPubkey: escrowPk,
+          toPubkey: to,
+          lamports: unlockLamports,
+          limit: 50,
+        }));
+
+      if (recoveredTxSig) {
+        if (!existing.txSig) {
+          await setRewardMilestonePayoutClaimTxSig({ commitmentId: id, milestoneId, txSig: recoveredTxSig });
+        }
+
         const nextMilestones = effectiveMilestones.slice();
         if (nextMilestones[idx]?.status !== "released") {
           nextMilestones[idx] = {
             ...m,
             status: "released",
             releasedAtUnix: nowUnix,
-            releasedTxSig: existing.txSig,
+            releasedTxSig: recoveredTxSig,
           };
         }
 
@@ -224,9 +239,10 @@ export async function POST(req: Request, ctx: { params: { id: string; milestoneI
         return NextResponse.json({
           ok: true,
           nowUnix,
-          signature: existing.txSig,
+          signature: recoveredTxSig,
           commitment: publicView(updated),
           idempotent: true,
+          recovered: !existing.txSig,
         });
       }
 
@@ -234,6 +250,7 @@ export async function POST(req: Request, ctx: { params: { id: string; milestoneI
         {
           error: "Claim already in progress",
           existing,
+          hint: "A payout claim record exists but no tx signature is recorded yet. If this persists, an admin can reconcile/reset the claim.",
         },
         { status: 409 }
       );
