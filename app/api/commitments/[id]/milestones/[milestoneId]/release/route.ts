@@ -96,6 +96,8 @@ export async function POST(req: Request, ctx: { params: { id: string; milestoneI
       getBalanceLamports(connection, escrowPk),
       getChainUnixTime(connection),
     ]);
+    const nowWallUnix = Math.floor(Date.now() / 1000);
+    const nowEffectiveUnix = Math.max(nowUnix, nowWallUnix);
     let balanceLamports = balanceLamports0;
 
     const milestones: RewardMilestone[] = Array.isArray(record.milestones) ? (record.milestones.slice() as RewardMilestone[]) : [];
@@ -243,14 +245,14 @@ export async function POST(req: Request, ctx: { params: { id: string; milestoneI
         });
       }
 
-      const ageSeconds = nowUnix - Number(existing.createdAtUnix ?? 0);
+      const ageSeconds = nowEffectiveUnix - Number(existing.createdAtUnix ?? 0);
       if (Number.isFinite(ageSeconds) && ageSeconds > 120) {
         await deleteRewardMilestonePayoutClaim({ commitmentId: id, milestoneId });
 
         const reacquired = await tryAcquireRewardMilestonePayoutClaim({
           commitmentId: id,
           milestoneId,
-          createdAtUnix: nowUnix,
+          createdAtUnix: nowEffectiveUnix,
           toPubkey: to.toBase58(),
           amountLamports: unlockLamports,
         });
