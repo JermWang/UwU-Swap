@@ -20,6 +20,17 @@ function milestoneIdFromRequest(input: { commitmentId: string; requestId: string
   return h.digest("hex").slice(0, 16);
 }
 
+function allocatedPercentFromMilestones(input: { milestones: RewardMilestone[]; totalFundedLamports: number }): number {
+  const total = Number(input.totalFundedLamports ?? 0);
+  return input.milestones.reduce((acc, m) => {
+    const explicitLamports = Number(m.unlockLamports ?? 0);
+    if (Number.isFinite(total) && total > 0 && Number.isFinite(explicitLamports) && explicitLamports > 0) {
+      return acc + (explicitLamports / total) * 100;
+    }
+    return acc + (Number(m.unlockPercent ?? 0) || 0);
+  }, 0);
+}
+
 export async function POST(req: Request, ctx: { params: { id: string } }) {
   const id = ctx.params.id;
 
@@ -115,6 +126,12 @@ export async function POST(req: Request, ctx: { params: { id: string } }) {
     const milestones: RewardMilestone[] = Array.isArray(record.milestones) ? (record.milestones.slice() as RewardMilestone[]) : [];
     if (milestones.length >= 50) {
       return NextResponse.json({ error: "Maximum 50 milestones allowed" }, { status: 400 });
+    }
+
+    const currentAllocatedPercent = allocatedPercentFromMilestones({ milestones, totalFundedLamports: Number(record.totalFundedLamports ?? 0) });
+    const totalNext = currentAllocatedPercent + Math.floor(unlockPercent);
+    if (totalNext > 100.0001) {
+      return NextResponse.json({ error: `Total allocation cannot exceed 100% (would be ${totalNext}%).` }, { status: 400 });
     }
 
     const milestoneId = milestoneIdFromRequest({ commitmentId: id, requestId });

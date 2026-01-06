@@ -286,7 +286,14 @@ export default function CreatorDashboardPage() {
 
   const selectedAllocatedPercent = useMemo(() => {
     if (!selectedProject) return 0;
-    return selectedProject.milestones.reduce((acc, m) => acc + (Number(m.unlockPercent ?? 0) || 0), 0);
+    const total = Number(selectedProject.commitment.totalFundedLamports ?? 0);
+    return selectedProject.milestones.reduce((acc, m) => {
+      const explicitLamports = Number(m.unlockLamports ?? 0);
+      if (Number.isFinite(total) && total > 0 && Number.isFinite(explicitLamports) && explicitLamports > 0) {
+        return acc + (explicitLamports / total) * 100;
+      }
+      return acc + (Number(m.unlockPercent ?? 0) || 0);
+    }, 0);
   }, [selectedProject]);
 
   const canManageSelectedProject = useMemo(() => {
@@ -548,7 +555,12 @@ export default function CreatorDashboardPage() {
     const dueAtUnix = Math.floor(dueAtMs / 1000);
 
     const existing = selectedProject.milestones.find((x) => x.id === milestoneId);
-    const existingPct = Number(existing?.unlockPercent ?? 0) || 0;
+    const totalFunded = Number(selectedProject.commitment.totalFundedLamports ?? 0);
+    const existingLamports = Number(existing?.unlockLamports ?? 0);
+    const existingPct =
+      Number.isFinite(totalFunded) && totalFunded > 0 && Number.isFinite(existingLamports) && existingLamports > 0
+        ? (existingLamports / totalFunded) * 100
+        : Number(existing?.unlockPercent ?? 0) || 0;
     const totalNext = selectedAllocatedPercent - existingPct + unlockPercent;
     if (totalNext > 100) {
       toast({ kind: "error", message: `Total allocation cannot exceed 100% (would be ${totalNext}%).` });
@@ -904,11 +916,11 @@ export default function CreatorDashboardPage() {
                     <div style={{
                       padding: "8px 10px",
                       borderRadius: 999,
-                      border: `1px solid ${selectedAllocatedPercent === 100 ? "rgba(134,239,172,0.25)" : "rgba(96,165,250,0.22)"}`,
-                      background: selectedAllocatedPercent === 100 ? "rgba(134,239,172,0.10)" : "rgba(96,165,250,0.10)",
+                      border: `1px solid ${selectedAllocatedPercent >= 99.5 ? "rgba(134,239,172,0.25)" : "rgba(96,165,250,0.22)"}`,
+                      background: selectedAllocatedPercent >= 99.5 ? "rgba(134,239,172,0.10)" : "rgba(96,165,250,0.10)",
                       fontSize: 12,
                       fontWeight: 700,
-                      color: selectedAllocatedPercent === 100 ? "rgba(134,239,172,0.95)" : "rgba(96,165,250,0.95)",
+                      color: selectedAllocatedPercent >= 99.5 ? "rgba(134,239,172,0.95)" : "rgba(96,165,250,0.95)",
                     }}>
                       {Math.round(selectedAllocatedPercent)}% allocated
                     </div>

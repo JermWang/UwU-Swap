@@ -20,8 +20,15 @@ function milestoneEditMessage(input: {
   return `Commit To Ship\nEdit Milestone\nCommitment: ${input.commitmentId}\nMilestone: ${input.milestoneId}\nRequest: ${input.requestId}\nTitle: ${input.title}\nUnlockPercent: ${input.unlockPercent}\nDueAtUnix: ${input.dueAtUnix}`;
 }
 
-function sumUnlockPercents(milestones: RewardMilestone[]): number {
-  return milestones.reduce((acc, m) => acc + (Number(m.unlockPercent ?? 0) || 0), 0);
+function allocatedPercentFromMilestones(input: { milestones: RewardMilestone[]; totalFundedLamports: number }): number {
+  const total = Number(input.totalFundedLamports ?? 0);
+  return input.milestones.reduce((acc, m) => {
+    const explicitLamports = Number(m.unlockLamports ?? 0);
+    if (Number.isFinite(total) && total > 0 && Number.isFinite(explicitLamports) && explicitLamports > 0) {
+      return acc + (explicitLamports / total) * 100;
+    }
+    return acc + (Number(m.unlockPercent ?? 0) || 0);
+  }, 0);
 }
 
 export async function POST(req: Request, ctx: { params: { id: string; milestoneId: string } }) {
@@ -146,9 +153,18 @@ export async function POST(req: Request, ctx: { params: { id: string; milestoneI
       dueAtUnix: nextDueAtUnix,
     };
 
-    const totalUnlockPercent = sumUnlockPercents(nextMilestones);
-    if (totalUnlockPercent > 100) {
-      return NextResponse.json({ error: `Total allocation cannot exceed 100% (currently ${totalUnlockPercent}%)` }, { status: 400 });
+    const totalFundedLamports = Number(record.totalFundedLamports ?? 0);
+    const currentAllocatedPercent = allocatedPercentFromMilestones({ milestones, totalFundedLamports });
+
+    const existingLamports = Number(existing.unlockLamports ?? 0);
+    const existingPct =
+      Number.isFinite(totalFundedLamports) && totalFundedLamports > 0 && Number.isFinite(existingLamports) && existingLamports > 0
+        ? (existingLamports / totalFundedLamports) * 100
+        : Number(existing.unlockPercent ?? 0) || 0;
+
+    const totalNext = currentAllocatedPercent - existingPct + unlockPercent;
+    if (totalNext > 100.0001) {
+      return NextResponse.json({ error: `Total allocation cannot exceed 100% (would be ${totalNext}%).` }, { status: 400 });
     }
 
     const updated = await updateRewardTotalsAndMilestones({
