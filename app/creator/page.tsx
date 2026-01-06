@@ -114,6 +114,10 @@ type CreatorData = {
   summary: SummaryData;
 };
 
+type CreatorDashboardProps = {
+  embedded?: boolean;
+};
+
 function fmtSol(lamports: number): string {
   const sol = lamports / 1_000_000_000;
   return new Intl.NumberFormat("en-US", { maximumFractionDigits: 4 }).format(sol);
@@ -189,7 +193,7 @@ function makeRequestId(): string {
 type TimeFilter = "all" | "30d" | "90d" | "1y";
 type StatusFilter = "all" | "active" | "completed" | "failed";
 
-export default function CreatorDashboardPage() {
+export function CreatorDashboardPage(props: CreatorDashboardProps) {
   const router = useRouter();
   const toast = useToast();
   const { publicKey, connected, signMessage } = useWallet();
@@ -650,23 +654,25 @@ export default function CreatorDashboardPage() {
   const summary = data.summary;
 
   return (
-    <div className={styles.page}>
-      <div className={styles.header}>
-        <div className={styles.headerLeft}>
-          <h1 className={styles.title}>Creator Dashboard</h1>
-          <p className={styles.wallet}>
-            <span className={styles.walletDot} />
-            {shortWallet(data.wallet)}
-          </p>
+    <div className={styles.page} style={props.embedded ? ({ padding: 0, maxWidth: "none" } as any) : undefined}>
+      {!props.embedded ? (
+        <div className={styles.header}>
+          <div className={styles.headerLeft}>
+            <h1 className={styles.title}>Creator Dashboard</h1>
+            <p className={styles.wallet}>
+              <span className={styles.walletDot} />
+              {shortWallet(data.wallet)}
+            </p>
+          </div>
+          <button className={styles.refreshBtn} onClick={() => publicKey && fetchCreatorData(publicKey.toBase58())}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M23 4v6h-6M1 20v-6h6" />
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+            </svg>
+            Refresh
+          </button>
         </div>
-        <button className={styles.refreshBtn} onClick={() => publicKey && fetchCreatorData(publicKey.toBase58())}>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M23 4v6h-6M1 20v-6h6" />
-            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
-          </svg>
-          Refresh
-        </button>
-      </div>
+      ) : null}
 
       {/* Summary Cards */}
       <div className={styles.summaryGrid}>
@@ -1350,4 +1356,8 @@ export default function CreatorDashboardPage() {
       </div>
     </div>
   );
+}
+
+export default function CreatorDashboardRoute() {
+  return <CreatorDashboardPage />;
 }

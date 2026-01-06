@@ -9,6 +9,7 @@ type ActiveTab = "landing" | "discover" | "commit" | "creator" | "docs";
 
 function getActiveTab(pathname: string, tabParam: string | null): ActiveTab {
   if (pathname.startsWith("/docs")) return "docs";
+  if (pathname.startsWith("/dashboard")) return "creator";
   if (pathname.startsWith("/creator")) return "creator";
   if (pathname.startsWith("/commit")) return "commit";
 
@@ -70,10 +71,10 @@ export default function GlobalNavLinks() {
         </Link>
         <Link
           className={`globalNavIconBtn${active === "creator" ? " globalNavIconBtnActive" : ""}`}
-          href="/creator"
+          href="/dashboard"
           aria-current={active === "creator" ? "page" : undefined}
-          aria-label="Creator Dashboard"
-          title="Creator Dashboard"
+          aria-label="Dashboard"
+          title="Dashboard"
         >
           <Icon d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
         </Link>
@@ -163,11 +164,11 @@ export default function GlobalNavLinks() {
         </Link>
         <Link
           className={`globalNavMenuItem${active === "creator" ? " globalNavMenuItemActive" : ""}`}
-          href="/creator"
+          href="/dashboard"
           onClick={() => setMobileOpen(false)}
         >
           <Icon d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
-          <span>Creator Dashboard</span>
+          <span>Dashboard</span>
         </Link>
         <Link
           className={`globalNavMenuItem${active === "docs" ? " globalNavMenuItemActive" : ""}`}
