@@ -1,6 +1,6 @@
 "use client";
 
-import { ReactNode, useCallback, useMemo } from "react";
+import { ReactNode, useCallback, useEffect, useMemo } from "react";
 import { clusterApiUrl } from "@solana/web3.js";
 import { WalletAdapterNetwork, WalletError } from "@solana/wallet-adapter-base";
 import { ConnectionProvider, WalletProvider } from "@solana/wallet-adapter-react";
@@ -44,12 +44,52 @@ export default function SolanaWalletProvider({ children }: { children: ReactNode
       innerMessage: String(anyErr?.error?.message ?? ""),
       code: anyErr?.code,
     };
-    console.error("[wallet] error", details, error);
+    console.error("[wallet] error", details, { cause: anyErr?.cause, inner: anyErr?.error }, error);
   }, []);
+
+  useEffect(() => {
+    const unsubs: Array<() => void> = [];
+
+    for (const w of wallets) {
+      const anyWallet: any = w as any;
+
+      const onAdapterError = (e: any) => {
+        console.error("[wallet] adapter error", { adapter: String(anyWallet?.name ?? ""), error: e });
+      };
+
+      const onReady = () => {
+        console.log("[wallet] adapter readyStateChange", {
+          adapter: String(anyWallet?.name ?? ""),
+          readyState: String(anyWallet?.readyState ?? ""),
+        });
+      };
+
+      if (typeof anyWallet?.on === "function") {
+        try {
+          anyWallet.on("error", onAdapterError);
+          anyWallet.on("readyStateChange", onReady);
+          unsubs.push(() => {
+            try {
+              anyWallet.off?.("error", onAdapterError);
+              anyWallet.off?.("readyStateChange", onReady);
+            } catch {
+              // ignore
+            }
+          });
+        } catch {
+          // ignore
+        }
+      }
+    }
+
+    return () => {
+      for (const u of unsubs) u();
+    };
+  }, [wallets]);
 
   return (
     <ConnectionProvider endpoint={endpoint}>
-      <WalletProvider wallets={wallets} autoConnect onError={onError}>
+      <WalletProvider wallets={wallets} onError={onError}>
         <WalletModalProvider>{children}</WalletModalProvider>
       </WalletProvider>
     </ConnectionProvider>
