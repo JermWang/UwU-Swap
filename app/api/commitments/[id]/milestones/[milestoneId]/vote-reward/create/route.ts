@@ -91,6 +91,27 @@ function getVoteRewardPoolUiAmount(): number {
   return Math.floor(n);
 }
 
+function getVoteRewardMode(): "pool" | "fixed" {
+  const raw = String(process.env.CTS_VOTE_REWARD_MODE ?? "pool").trim().toLowerCase();
+  if (raw === "fixed" || raw === "per_vote" || raw === "per-vote" || raw === "per_voter" || raw === "per-voter") return "fixed";
+  return "pool";
+}
+
+function getVoteRewardPerVoteUiAmount(): number {
+  const raw = String(process.env.CTS_VOTE_REWARD_PER_VOTE_UI_AMOUNT ?? "").trim();
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0 || !Number.isInteger(n)) return 0;
+  return Math.floor(n);
+}
+
+function getVoteRewardMaxPoolUiAmount(): number {
+  const raw = String(process.env.CTS_VOTE_REWARD_MAX_POOL_UI_AMOUNT ?? "").trim();
+  if (!raw.length) return 0;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0 || !Number.isInteger(n)) return 0;
+  return Math.floor(n);
+}
+
 const MAX_I64 = 9223372036854775807n;
 
 export async function POST(req: Request, ctx: { params: { id: string; milestoneId: string } }) {
@@ -153,14 +174,6 @@ export async function POST(req: Request, ctx: { params: { id: string; milestoneI
       return NextResponse.json({ error: "CTS_VOTE_REWARD_FAUCET_OWNER_PUBKEY is required" }, { status: 500 });
     }
 
-    const poolUiAmount = getVoteRewardPoolUiAmount();
-    if (!poolUiAmount) {
-      return NextResponse.json(
-        { error: "CTS_VOTE_REWARD_POOL_UI_AMOUNT is required and must be a positive integer" },
-        { status: 500 }
-      );
-    }
-
     const mintPk = new PublicKey(shipMintRaw);
     const tokenProgram = await getTokenProgramIdForMint({ connection, mint: mintPk });
     const mintInfo = await verifyTokenExistsOnChain({ connection, mint: mintPk });
@@ -169,16 +182,7 @@ export async function POST(req: Request, ctx: { params: { id: string; milestoneI
       return NextResponse.json({ error: "Invalid mint account", mint: shipMintRaw, mintInfo }, { status: 500 });
     }
 
-    const poolAmountRawBig = BigInt(poolUiAmount) * 10n ** BigInt(decimals);
-    if (poolAmountRawBig <= 0n || poolAmountRawBig > MAX_I64) {
-      return NextResponse.json({ error: "Pool amount too large", poolAmountRaw: poolAmountRawBig.toString() }, { status: 500 });
-    }
-    if (poolAmountRawBig > BigInt(Number.MAX_SAFE_INTEGER)) {
-      return NextResponse.json(
-        { error: "Pool amount exceeds safe JS integer; reduce CTS_VOTE_REWARD_POOL_UI_AMOUNT" },
-        { status: 500 }
-      );
-    }
+    const mode = getVoteRewardMode();
 
     const snapshots = await listRewardVoterSnapshotsByMilestone({ commitmentId, milestoneId });
 
@@ -228,43 +232,132 @@ export async function POST(req: Request, ctx: { params: { id: string; milestoneI
       }
     }
 
-    const weightsByWallet = new Map<string, number>();
-    for (const s of snapshots) {
-      const pk = String(s.signerPubkey ?? "").trim();
-      if (!pk) continue;
-      const base = Number(s.projectUiAmount ?? 0);
-      const multBps = Number(s.shipMultiplierBps ?? 10000);
-      if (!Number.isFinite(base) || base <= 0) continue;
-      if (!Number.isFinite(multBps) || multBps <= 0) continue;
-
-      const baseWeight = base * (multBps / 10000);
-      const streakMult = Number(participationMultiplierByWallet.get(pk) ?? 1);
-      const w = baseWeight * streakMult;
-      if (!Number.isFinite(w) || w <= 0) continue;
-      weightsByWallet.set(pk, (weightsByWallet.get(pk) ?? 0) + w);
-    }
-
-    const totalWeight = Array.from(weightsByWallet.values()).reduce((acc, v) => acc + v, 0);
-    const hasEligibleVoters = Number.isFinite(totalWeight) && totalWeight > 0;
-
     const distributionId = crypto.randomBytes(16).toString("hex");
-    const poolAmountRawNum = Number(poolAmountRawBig);
 
     const allocations: Array<{ distributionId: string; walletPubkey: string; amountRaw: string; weight: number }> = [];
 
-    if (hasEligibleVoters && poolAmountRawNum > 0) {
-      const entries = Array.from(weightsByWallet.entries()).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
-      let allocated = 0;
-      for (const [walletPubkey, weight] of entries) {
-        const amt = Math.floor((poolAmountRawNum * weight) / totalWeight);
-        if (amt <= 0) continue;
-        allocations.push({ distributionId, walletPubkey, amountRaw: String(amt), weight });
-        allocated += amt;
+    let poolAmountRawBig = 0n;
+
+    if (mode === "fixed") {
+      const perVoteUiAmount = getVoteRewardPerVoteUiAmount();
+      if (!perVoteUiAmount) {
+        return NextResponse.json(
+          { error: "CTS_VOTE_REWARD_PER_VOTE_UI_AMOUNT is required and must be a positive integer when CTS_VOTE_REWARD_MODE=fixed" },
+          { status: 500 }
+        );
       }
 
-      const remainder = poolAmountRawNum - allocated;
-      if (remainder > 0 && allocations.length > 0) {
-        allocations[0] = { ...allocations[0], amountRaw: String(Number(allocations[0].amountRaw) + remainder) };
+      const perVoteRawBig = BigInt(perVoteUiAmount) * 10n ** BigInt(decimals);
+      if (perVoteRawBig <= 0n || perVoteRawBig > MAX_I64) {
+        return NextResponse.json({ error: "Per-vote amount too large", perVoteAmountRaw: perVoteRawBig.toString() }, { status: 500 });
+      }
+      if (perVoteRawBig > BigInt(Number.MAX_SAFE_INTEGER)) {
+        return NextResponse.json(
+          { error: "Per-vote amount exceeds safe JS integer; reduce CTS_VOTE_REWARD_PER_VOTE_UI_AMOUNT" },
+          { status: 500 }
+        );
+      }
+
+      const perVoteRawNum = Number(perVoteRawBig);
+      let total = 0;
+
+      for (const s of snapshots) {
+        const pk = String(s.signerPubkey ?? "").trim();
+        if (!pk) continue;
+
+        const shipMultBps = Number(s.shipMultiplierBps ?? 10000);
+        if (!Number.isFinite(shipMultBps) || shipMultBps <= 0) continue;
+
+        const streakMult = Number(participationMultiplierByWallet.get(pk) ?? 1);
+        const mult = (shipMultBps / 10000) * streakMult;
+        if (!Number.isFinite(mult) || mult <= 0) continue;
+
+        const amt = Math.floor(perVoteRawNum * mult);
+        if (!Number.isFinite(amt) || amt <= 0) continue;
+
+        allocations.push({ distributionId, walletPubkey: pk, amountRaw: String(amt), weight: mult });
+        total += amt;
+      }
+
+      if (!Number.isFinite(total) || total <= 0) {
+        return NextResponse.json({ error: "No eligible voters for fixed distribution" }, { status: 409 });
+      }
+      if (total > Number.MAX_SAFE_INTEGER) {
+        return NextResponse.json({ error: "Total pool exceeds safe JS integer; reduce CTS_VOTE_REWARD_PER_VOTE_UI_AMOUNT" }, { status: 500 });
+      }
+
+      const maxPoolUiAmount = getVoteRewardMaxPoolUiAmount();
+      if (maxPoolUiAmount) {
+        const maxPoolRawBig = BigInt(maxPoolUiAmount) * 10n ** BigInt(decimals);
+        if (maxPoolRawBig > 0n && BigInt(total) > maxPoolRawBig) {
+          return NextResponse.json(
+            {
+              error: "Fixed vote reward distribution exceeds max pool cap",
+              hint: "Increase CTS_VOTE_REWARD_MAX_POOL_UI_AMOUNT or reduce CTS_VOTE_REWARD_PER_VOTE_UI_AMOUNT",
+              totalAmountRaw: String(total),
+              maxPoolAmountRaw: maxPoolRawBig.toString(),
+            },
+            { status: 409 }
+          );
+        }
+      }
+
+      poolAmountRawBig = BigInt(total);
+    } else {
+      const poolUiAmount = getVoteRewardPoolUiAmount();
+      if (!poolUiAmount) {
+        return NextResponse.json(
+          { error: "CTS_VOTE_REWARD_POOL_UI_AMOUNT is required and must be a positive integer" },
+          { status: 500 }
+        );
+      }
+
+      poolAmountRawBig = BigInt(poolUiAmount) * 10n ** BigInt(decimals);
+      if (poolAmountRawBig <= 0n || poolAmountRawBig > MAX_I64) {
+        return NextResponse.json({ error: "Pool amount too large", poolAmountRaw: poolAmountRawBig.toString() }, { status: 500 });
+      }
+      if (poolAmountRawBig > BigInt(Number.MAX_SAFE_INTEGER)) {
+        return NextResponse.json(
+          { error: "Pool amount exceeds safe JS integer; reduce CTS_VOTE_REWARD_POOL_UI_AMOUNT" },
+          { status: 500 }
+        );
+      }
+
+      const weightsByWallet = new Map<string, number>();
+      for (const s of snapshots) {
+        const pk = String(s.signerPubkey ?? "").trim();
+        if (!pk) continue;
+        const base = Number(s.projectUiAmount ?? 0);
+        const multBps = Number(s.shipMultiplierBps ?? 10000);
+        if (!Number.isFinite(base) || base <= 0) continue;
+        if (!Number.isFinite(multBps) || multBps <= 0) continue;
+
+        const baseWeight = base * (multBps / 10000);
+        const streakMult = Number(participationMultiplierByWallet.get(pk) ?? 1);
+        const w = baseWeight * streakMult;
+        if (!Number.isFinite(w) || w <= 0) continue;
+        weightsByWallet.set(pk, (weightsByWallet.get(pk) ?? 0) + w);
+      }
+
+      const totalWeight = Array.from(weightsByWallet.values()).reduce((acc, v) => acc + v, 0);
+      const hasEligibleVoters = Number.isFinite(totalWeight) && totalWeight > 0;
+
+      const poolAmountRawNum = Number(poolAmountRawBig);
+
+      if (hasEligibleVoters && poolAmountRawNum > 0) {
+        const entries = Array.from(weightsByWallet.entries()).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+        let allocated = 0;
+        for (const [walletPubkey, weight] of entries) {
+          const amt = Math.floor((poolAmountRawNum * weight) / totalWeight);
+          if (amt <= 0) continue;
+          allocations.push({ distributionId, walletPubkey, amountRaw: String(amt), weight });
+          allocated += amt;
+        }
+
+        const remainder = poolAmountRawNum - allocated;
+        if (remainder > 0 && allocations.length > 0) {
+          allocations[0] = { ...allocations[0], amountRaw: String(Number(allocations[0].amountRaw) + remainder) };
+        }
       }
     }
 
