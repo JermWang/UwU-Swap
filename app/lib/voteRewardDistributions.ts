@@ -107,18 +107,6 @@ function getVoteRewardMaxPoolUiAmount(): number {
   return Math.floor(n);
 }
 
-function getVoteRewardAutoCreateMaxPairs(): number {
-  const raw = Number(process.env.CTS_VOTE_REWARD_AUTO_CREATE_MAX_PAIRS ?? "");
-  if (Number.isFinite(raw) && raw > 0) return Math.floor(raw);
-  return 8;
-}
-
-function getVoteRewardAutoCreateMaxCreates(): number {
-  const raw = Number(process.env.CTS_VOTE_REWARD_AUTO_CREATE_MAX_CREATES ?? "");
-  if (Number.isFinite(raw) && raw >= 0) return Math.floor(raw);
-  return 2;
-}
-
 const MAX_I64 = 9223372036854775807n;
 
 export async function ensureVoteRewardDistributionsForWallet(input: {
@@ -140,10 +128,8 @@ export async function ensureVoteRewardDistributionsForWallet(input: {
   const faucetOwnerPubkey = String(process.env.CTS_VOTE_REWARD_FAUCET_OWNER_PUBKEY ?? "").trim();
   if (!shipMintRaw || !faucetOwnerPubkey) return { considered: 0, created: 0 };
 
-  const maxPairsDefault = getVoteRewardAutoCreateMaxPairs();
-  const maxCreatesDefault = getVoteRewardAutoCreateMaxCreates();
-  const maxPairs = Math.max(1, Math.min(50, Math.floor(Number(input.maxPairs ?? maxPairsDefault))));
-  const maxCreates = Math.max(0, Math.min(20, Math.floor(Number(input.maxCreates ?? maxCreatesDefault))));
+  const maxPairs = Math.max(1, Math.min(12, Math.floor(Number(input.maxPairs ?? 8))));
+  const maxCreates = Math.max(0, Math.min(5, Math.floor(Number(input.maxCreates ?? 2))));
   if (maxCreates === 0) return { considered: 0, created: 0 };
 
   const pool = getPool();
