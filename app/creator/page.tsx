@@ -233,6 +233,11 @@ export default function CreatorDashboardPage() {
   const { publicKey, connected, signMessage } = useWallet();
   const { setVisible } = useWalletModal();
 
+  useEffect(() => {
+    if (embedded) return;
+    router.replace("/dashboard");
+  }, [embedded, router]);
+
   const [milestoneBusy, setMilestoneBusy] = useState<string | null>(null);
   const [milestoneManagerOpen, setMilestoneManagerOpen] = useState<boolean>(true);
   const [milestoneReviewMode, setMilestoneReviewMode] = useState<Record<string, "deadline" | "now">>({});
