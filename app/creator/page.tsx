@@ -6,6 +6,7 @@ import { useWallet } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import bs58 from "bs58";
 import { useToast } from "@/app/components/ToastProvider";
+import { fmtSolFromLamports2 } from "@/app/lib/formatUi";
 import styles from "./CreatorDashboard.module.css";
 
 type MilestoneData = {
@@ -119,8 +120,7 @@ type CreatorData = {
 };
 
 function fmtSol(lamports: number): string {
-  const sol = lamports / 1_000_000_000;
-  return new Intl.NumberFormat("en-US", { maximumFractionDigits: 4 }).format(sol);
+  return fmtSolFromLamports2(lamports);
 }
 
 function parseUsdShorthand(rawInput: string): number | null {
@@ -130,7 +130,7 @@ function parseUsdShorthand(rawInput: string): number | null {
     .replace(/[$,_\s]/g, "");
   if (!raw) return null;
 
-  const m = raw.match(/^([0-9]+(?:\.[0-9]+)?)([kmb])?$/);
+  const m = raw.match(/^([0-9]+(?:\.[0-9]+)?)([kmb])$/);
   if (!m) return null;
 
   const n = Number(m[1]);
@@ -143,6 +143,12 @@ function parseUsdShorthand(rawInput: string): number | null {
   if (!Number.isFinite(out) || out <= 0) return null;
   if (!Number.isSafeInteger(out)) return null;
   return out;
+}
+
+function fmtUsdExact0(value: number): string {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return "0";
+  return new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(Math.floor(n));
 }
 
 function fmtUsdShort(value: number): string {
@@ -1078,8 +1084,8 @@ export default function CreatorDashboardPage() {
                       {newMilestoneKind === "market_cap" ? (
                         <input
                           value={newMilestoneThresholdUsd}
-                          onChange={(e) => setNewMilestoneThresholdUsd(e.target.value)}
-                          placeholder="Market cap threshold (e.g. 10m)"
+                          onChange={(e) => setNewMilestoneThresholdUsd(e.target.value.replace(/[$,_\s]/g, "").toLowerCase())}
+                          placeholder="Market cap threshold (e.g. 10m, 250k, 2b)"
                           disabled={milestoneBusy != null}
                           style={{
                             width: 220,
@@ -1143,6 +1149,23 @@ export default function CreatorDashboardPage() {
                         {milestoneBusy === "add" ? "Submitting…" : "Sign & Add"}
                       </button>
                     </div>
+                    {newMilestoneKind === "market_cap" ? (
+                      (() => {
+                        const thresholdUsd = parseUsdShorthand(newMilestoneThresholdUsd);
+                        return (
+                          <div style={{ marginTop: 10, fontSize: 12, color: "rgba(255,255,255,0.60)" }}>
+                            <div>
+                              Use shorthand only: <span className={styles.mono}>250k</span>, <span className={styles.mono}>10m</span>, <span className={styles.mono}>2b</span>.
+                            </div>
+                            <div style={{ marginTop: 6, color: thresholdUsd ? "rgba(255,255,255,0.72)" : "rgba(248,113,113,0.92)" }}>
+                              {thresholdUsd
+                                ? `You are setting: Market cap ≥ $${fmtUsdExact0(thresholdUsd)}`
+                                : "Invalid format — include a k/m/b suffix (e.g. 10m, 250k, 2b)."}
+                            </div>
+                          </div>
+                        );
+                      })()
+                    ) : null}
                     <div style={{ marginTop: 10, fontSize: 12, color: "rgba(255,255,255,0.50)" }}>
                       Adding milestones uses a wallet signature only. No funds move during setup.
                     </div>
@@ -1189,7 +1212,7 @@ export default function CreatorDashboardPage() {
                           {(m as any).autoKind === "market_cap" ? (
                             <>
                               <span className={styles.milestoneDot}>·</span>
-                              <span>Market cap ${fmtUsdShort(Number((m as any).marketCapThresholdUsd ?? 0))}</span>
+                              <span>Auto: Market cap ≥ ${`$${fmtUsdExact0(Number((m as any).marketCapThresholdUsd ?? 0))}`}</span>
                             </>
                           ) : null}
                           {dueLabel ? (

@@ -4,12 +4,13 @@ import { Connection, PublicKey, SystemProgram, Transaction, clusterApiUrl } from
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import bs58 from "bs58";
-import { useToast } from "@/app/components/ToastProvider";
-import PriceChart from "@/app/components/PriceChart";
 import styles from "./CommitDashboard.module.css";
 
-type AdminActionModalState =
-  | null
+import { useToast } from "../../components/ToastProvider";
+import { fmtNumber2, fmtSolFromLamports2 } from "../../lib/formatUi";
+import PriceChart from "@/app/components/PriceChart";
+ 
+type AdminModal =
   | {
       kind: "resolve";
       outcome: "success" | "failure";
@@ -35,6 +36,8 @@ type AdminActionModalState =
       result?: any;
       error?: string;
     };
+
+type AdminActionModalState = AdminModal | null;
 
 type ProfileSummary = {
   walletPubkey: string;
@@ -176,14 +179,11 @@ async function jsonPost(path: string, body: unknown): Promise<any> {
 }
 
 function fmtSol(lamports: number): string {
-  const sol = lamports / 1_000_000_000;
-  return new Intl.NumberFormat("en-US", { maximumFractionDigits: 6 }).format(sol);
+  return fmtSolFromLamports2(lamports);
 }
 
 function fmtUsd(value: number): string {
-  const n = Number(value);
-  if (!Number.isFinite(n)) return "0";
-  return new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(n);
+  return fmtNumber2(value);
 }
 
 function clamp01(n: number): number {
@@ -1313,7 +1313,7 @@ export default function CommitDashboardClient(props: Props) {
                     <h3 className={styles.holderVoteTitle}>Token Holder Voting</h3>
                     <p className={styles.holderVoteSubtitle}>
                       {pendingMilestones.length > 0
-                        ? `${pendingMilestones.length} milestone${pendingMilestones.length === 1 ? "" : "s"} open for voting (${totalPendingSOL.toFixed(2)} SOL)`
+                        ? `${pendingMilestones.length} milestone${pendingMilestones.length === 1 ? "" : "s"} open for voting (${fmtNumber2(totalPendingSOL)} SOL)`
                         : scheduledMilestones.length > 0
                           ? `${scheduledMilestones.length} milestone${scheduledMilestones.length === 1 ? "" : "s"} turned in early — voting opens at the deadline`
                           : "No milestones open for voting right now"}

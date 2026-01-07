@@ -7,6 +7,7 @@ import { useWallet } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 
 import { useToast } from "@/app/components/ToastProvider";
+import { fmtNumber2 } from "@/app/lib/formatUi";
 import styles from "./Dashboard.module.css";
 import CreatorDashboardPage from "../creator/page";
 
@@ -237,7 +238,7 @@ export default function DashboardPage() {
     return b;
   }, [claimable]);
 
-  const totalClaimableUi = useMemo(() => String(claimable?.uiAmount ?? "0"), [claimable]);
+  const totalClaimableUi = useMemo(() => fmtNumber2(claimable?.uiAmount ?? "0"), [claimable]);
   const totalDistributions = useMemo(() => Number(claimable?.distributions ?? 0), [claimable]);
   const totalCommitments = useMemo(() => Number(claimable?.commitments ?? 0), [claimable]);
 
@@ -300,7 +301,7 @@ export default function DashboardPage() {
             <div className={styles.summaryCard}>
               <div className={styles.summaryLabel}>$SHIP balance</div>
               <div className={`${styles.summaryValue} ${styles.summaryValueGreen}`}>
-                {shipBusy ? "…" : shipUiAmount.toLocaleString("en-US", { maximumFractionDigits: 4 })}
+                {shipBusy ? "…" : fmtNumber2(shipUiAmount)}
               </div>
               {shipError ? <div className={styles.error}>{shipError}</div> : null}
             </div>
@@ -380,19 +381,24 @@ export default function DashboardPage() {
                     b.commitmentId;
 
                   const holdingUi = bal && typeof bal.uiAmount === "number" ? bal.uiAmount : null;
+                  const claimableUi = (() => {
+                    const rawUi = String(b.uiAmount ?? "").trim();
+                    if (rawUi) return fmtNumber2(rawUi);
+                    return fmtNumber2("0");
+                  })();
 
                   return (
                     <div key={b.commitmentId} className={styles.row}>
                       <div className={styles.rowMain}>
                         <div className={styles.rowTitle}>{name}</div>
                         <div className={styles.rowMeta}>
-                          {holdingUi != null ? `Holding: ${holdingUi.toLocaleString("en-US", { maximumFractionDigits: 4 })}` : ""}
+                          {holdingUi != null ? `Holding: ${fmtNumber2(holdingUi)}` : ""}
                           {holdingUi != null ? " · " : ""}
                           {b.distributions} distribution{b.distributions === 1 ? "" : "s"}
                         </div>
                       </div>
                       <div className={styles.rowRight}>
-                        <div className={styles.amount}>{String(b.uiAmount ?? b.amountRaw)}</div>
+                        <div className={styles.amount}>{claimableUi}</div>
                       </div>
                     </div>
                   );
@@ -428,7 +434,7 @@ export default function DashboardPage() {
                         <div className={styles.rowTitle}>{name}</div>
                         <div className={styles.rowMeta}>
                           {String(h.vote)} · {formatUnix(Number(h.createdAtUnix))}
-                          {Number(h.projectValueUsd) > 0 ? ` · weight $${Math.round(Number(h.projectValueUsd)).toLocaleString("en-US")}` : ""}
+                          {Number(h.projectValueUsd) > 0 ? ` · weight $${fmtNumber2(Number(h.projectValueUsd))}` : ""}
                         </div>
                       </div>
                       <div className={styles.rowRight}>

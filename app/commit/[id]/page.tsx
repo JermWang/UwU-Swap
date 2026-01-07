@@ -15,6 +15,7 @@ import {
 } from "../../lib/escrowStore";
 import { getBalanceLamports, getChainUnixTime, getConnection } from "../../lib/solana";
 import { getSafeErrorMessage } from "../../lib/safeError";
+import { fmtSolFromLamports2 } from "../../lib/formatUi";
 
 export const runtime = "nodejs";
 
@@ -25,8 +26,7 @@ function clamp01(n: number): number {
 }
 
 function fmtSol(lamports: number): string {
-  const sol = lamports / 1_000_000_000;
-  return new Intl.NumberFormat("en-US", { maximumFractionDigits: 6 }).format(sol);
+  return fmtSolFromLamports2(lamports);
 }
 
 function humanRelative(seconds: number): string {

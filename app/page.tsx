@@ -8,6 +8,7 @@ import { Transaction } from "@solana/web3.js";
 
 import ClosedBetaNotice from "./components/ClosedBetaNotice";
 import TokenContractBar from "./components/TokenContractBar";
+import { fmtNumber2, fmtSolFromLamports2 } from "./lib/formatUi";
 
 type ProfileSummary = {
   walletPubkey: string;
@@ -108,8 +109,7 @@ type CommitmentStatusResponse = {
 };
 
 function lamportsToSol(lamports: number): string {
-  const sol = lamports / 1_000_000_000;
-  return new Intl.NumberFormat("en-US", { maximumFractionDigits: 6 }).format(sol);
+  return fmtSolFromLamports2(lamports);
 }
 
 function clamp01(n: number): number {
@@ -133,9 +133,9 @@ function fmtCompact(n: number): string {
   const v = Number(n);
   if (!Number.isFinite(v)) return "0";
   const abs = Math.abs(v);
-  if (abs >= 1_000_000_000) return `${(v / 1_000_000_000).toFixed(2)}B`;
-  if (abs >= 1_000_000) return `${(v / 1_000_000).toFixed(2)}M`;
-  if (abs >= 1_000) return `${(v / 1_000).toFixed(1)}K`;
+  if (abs >= 1_000_000_000) return `${fmtNumber2(v / 1_000_000_000)}B`;
+  if (abs >= 1_000_000) return `${fmtNumber2(v / 1_000_000)}M`;
+  if (abs >= 1_000) return `${fmtNumber2(v / 1_000)}K`;
   return String(Math.round(v));
 }
 
@@ -1150,8 +1150,7 @@ export default function Home() {
     if (lamports == null) return "";
     const v = Number(lamports);
     if (!Number.isFinite(v)) return "";
-    const sol = v / 1_000_000_000;
-    return new Intl.NumberFormat("en-US", { maximumFractionDigits: 6 }).format(sol);
+    return fmtSolFromLamports2(v);
   }
 
   function fmtSol2(lamports?: number): string {

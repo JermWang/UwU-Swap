@@ -83,7 +83,8 @@ function signPrivyRequest(input: {
   const sigs: string[] = [];
   for (const k of keys) {
     const keyObj = privateKeyToKeyObject(k);
-    const signatureBuffer = crypto.sign("sha256", buf, keyObj);
+    const data = new Uint8Array(buf);
+    const signatureBuffer = crypto.sign("sha256", data, keyObj);
     sigs.push(signatureBuffer.toString("base64"));
   }
   return sigs.join(",");
@@ -423,8 +424,8 @@ export async function privyFundWalletFromFeePayer(input: {
     const balance = await withRetry(() => connection.getBalance(feePayer.publicKey, "confirmed"));
     const neededLamports = lamports + 5000;
     if (balance < neededLamports) {
-      const balanceSol = (balance / 1_000_000_000).toFixed(6);
-      const needSol = (neededLamports / 1_000_000_000).toFixed(6);
+      const balanceSol = (balance / 1_000_000_000).toFixed(2);
+      const needSol = (neededLamports / 1_000_000_000).toFixed(2);
       return {
         ok: false,
         error: `Fee payer ${feePayer.publicKey.toBase58()} has insufficient balance (${balance} lamports ~${balanceSol} SOL, need ${neededLamports} lamports ~${needSol} SOL). Fund the ESCROW_FEE_PAYER_SECRET_KEY address.`,
