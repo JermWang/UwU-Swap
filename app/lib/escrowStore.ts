@@ -393,9 +393,12 @@ export type VoteRewardDistributionClaim = {
   createdAtUnix: number;
   forfeitedLamports: number;
   buybackLamports: number;
+  voteRewardLamports: number;
   voterPotLamports: number;
   shipBuybackTreasuryPubkey: string;
+  voteRewardTreasuryPubkey?: string;
   buybackTxSig: string;
+  voteRewardTxSig?: string;
   voterPotTxSig?: string;
   status: MilestoneFailureDistributionStatus;
  };
@@ -936,6 +939,16 @@ async function ensureSchema(): Promise<void> {
     create index if not exists milestone_failure_distributions_commitment_idx on milestone_failure_distributions(commitment_id);
     create index if not exists milestone_failure_distributions_commitment_milestone_idx on milestone_failure_distributions(commitment_id, milestone_id);
   `);
+
+    try {
+      await pool.query("alter table milestone_failure_distributions add column if not exists vote_reward_lamports bigint not null default 0");
+    } catch {}
+    try {
+      await pool.query("alter table milestone_failure_distributions add column if not exists vote_reward_treasury_pubkey text null");
+    } catch {}
+    try {
+      await pool.query("alter table milestone_failure_distributions add column if not exists vote_reward_tx_sig text null");
+    } catch {}
 
     await pool.query(`
     create table if not exists milestone_failure_distribution_allocations (
@@ -1649,9 +1662,12 @@ export async function getMilestoneFailureDistribution(input: {
     createdAtUnix: Number(row.created_at_unix),
     forfeitedLamports: Number(row.forfeited_lamports),
     buybackLamports: Number(row.buyback_lamports),
+    voteRewardLamports: Number(row.vote_reward_lamports ?? 0),
     voterPotLamports: Number(row.voter_pot_lamports),
     shipBuybackTreasuryPubkey: String(row.ship_buyback_treasury_pubkey),
+    voteRewardTreasuryPubkey: row.vote_reward_treasury_pubkey == null ? undefined : String(row.vote_reward_treasury_pubkey),
     buybackTxSig: String(row.buyback_tx_sig),
+    voteRewardTxSig: row.vote_reward_tx_sig == null ? undefined : String(row.vote_reward_tx_sig),
     voterPotTxSig: row.voter_pot_tx_sig == null ? undefined : String(row.voter_pot_tx_sig),
     status: String(row.status) as MilestoneFailureDistributionStatus,
   };
@@ -1671,7 +1687,7 @@ export async function listMilestoneFailureDistributionsByCommitmentId(commitment
   const pool = getPool();
   const res = await pool.query(
     `select id, commitment_id, milestone_id, created_at_unix, forfeited_lamports, buyback_lamports, voter_pot_lamports,
-            ship_buyback_treasury_pubkey, buyback_tx_sig, voter_pot_tx_sig, status
+            ship_buyback_treasury_pubkey, vote_reward_lamports, vote_reward_treasury_pubkey, buyback_tx_sig, vote_reward_tx_sig, voter_pot_tx_sig, status
      from milestone_failure_distributions where commitment_id=$1`,
     [id]
   );
@@ -1683,9 +1699,12 @@ export async function listMilestoneFailureDistributionsByCommitmentId(commitment
     createdAtUnix: Number(row.created_at_unix),
     forfeitedLamports: Number(row.forfeited_lamports),
     buybackLamports: Number(row.buyback_lamports),
+    voteRewardLamports: Number(row.vote_reward_lamports ?? 0),
     voterPotLamports: Number(row.voter_pot_lamports),
     shipBuybackTreasuryPubkey: String(row.ship_buyback_treasury_pubkey),
+    voteRewardTreasuryPubkey: row.vote_reward_treasury_pubkey == null ? undefined : String(row.vote_reward_treasury_pubkey),
     buybackTxSig: String(row.buyback_tx_sig),
+    voteRewardTxSig: row.vote_reward_tx_sig == null ? undefined : String(row.vote_reward_tx_sig),
     voterPotTxSig: row.voter_pot_tx_sig == null ? undefined : String(row.voter_pot_tx_sig),
     status: String(row.status) as MilestoneFailureDistributionStatus,
   }));
@@ -1742,9 +1761,9 @@ export async function tryAcquireMilestoneFailureDistributionCreate(input: {
   const pool = getPool();
   const res = await pool.query(
     `insert into milestone_failure_distributions (
-      id, commitment_id, milestone_id, created_at_unix, forfeited_lamports, buyback_lamports, voter_pot_lamports,
-      ship_buyback_treasury_pubkey, buyback_tx_sig, voter_pot_tx_sig, status
-    ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+      id, commitment_id, milestone_id, created_at_unix, forfeited_lamports, buyback_lamports, vote_reward_lamports, voter_pot_lamports,
+      ship_buyback_treasury_pubkey, vote_reward_treasury_pubkey, buyback_tx_sig, vote_reward_tx_sig, voter_pot_tx_sig, status
+    ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
     on conflict (commitment_id, milestone_id) do nothing
     returning id`,
     [
@@ -1754,9 +1773,12 @@ export async function tryAcquireMilestoneFailureDistributionCreate(input: {
       String(input.distribution.createdAtUnix),
       String(input.distribution.forfeitedLamports),
       String(input.distribution.buybackLamports),
+      String(input.distribution.voteRewardLamports),
       String(input.distribution.voterPotLamports),
       input.distribution.shipBuybackTreasuryPubkey,
+      input.distribution.voteRewardTreasuryPubkey ?? null,
       input.distribution.buybackTxSig,
+      input.distribution.voteRewardTxSig ?? null,
       input.distribution.voterPotTxSig ?? null,
       input.distribution.status,
     ]
@@ -1796,6 +1818,7 @@ export async function tryAcquireMilestoneFailureDistributionCreate(input: {
  export async function setMilestoneFailureDistributionTxSigs(input: {
   distributionId: string;
   buybackTxSig?: string | null;
+  voteRewardTxSig?: string | null;
   voterPotTxSig?: string | null;
  }): Promise<void> {
   await ensureSchema();
@@ -1810,6 +1833,7 @@ export async function tryAcquireMilestoneFailureDistributionCreate(input: {
       mem.milestoneFailureDistributionsByCommitmentMilestone.set(k, {
         ...d,
         buybackTxSig: input.buybackTxSig ?? d.buybackTxSig,
+        voteRewardTxSig: input.voteRewardTxSig ?? d.voteRewardTxSig,
         voterPotTxSig: input.voterPotTxSig ?? d.voterPotTxSig,
       });
       break;
@@ -1823,6 +1847,13 @@ export async function tryAcquireMilestoneFailureDistributionCreate(input: {
     await pool.query(
       "update milestone_failure_distributions set buyback_tx_sig=$2 where id=$1 and (buyback_tx_sig is null or buyback_tx_sig='' or buyback_tx_sig='pending')",
       [distributionId, String(input.buybackTxSig)]
+    );
+  }
+
+  if (input.voteRewardTxSig != null) {
+    await pool.query(
+      "update milestone_failure_distributions set vote_reward_tx_sig=$2 where id=$1 and (vote_reward_tx_sig is null or vote_reward_tx_sig='')",
+      [distributionId, String(input.voteRewardTxSig)]
     );
   }
 
@@ -1854,9 +1885,9 @@ export async function tryAcquireMilestoneFailureDistributionCreate(input: {
   const pool = getPool();
   await pool.query(
     `insert into milestone_failure_distributions (
-      id, commitment_id, milestone_id, created_at_unix, forfeited_lamports, buyback_lamports, voter_pot_lamports,
-      ship_buyback_treasury_pubkey, buyback_tx_sig, voter_pot_tx_sig, status
-    ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+      id, commitment_id, milestone_id, created_at_unix, forfeited_lamports, buyback_lamports, vote_reward_lamports, voter_pot_lamports,
+      ship_buyback_treasury_pubkey, vote_reward_treasury_pubkey, buyback_tx_sig, vote_reward_tx_sig, voter_pot_tx_sig, status
+    ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
     [
       input.distribution.id,
       input.distribution.commitmentId,
@@ -1864,9 +1895,12 @@ export async function tryAcquireMilestoneFailureDistributionCreate(input: {
       String(input.distribution.createdAtUnix),
       String(input.distribution.forfeitedLamports),
       String(input.distribution.buybackLamports),
+      String(input.distribution.voteRewardLamports),
       String(input.distribution.voterPotLamports),
       input.distribution.shipBuybackTreasuryPubkey,
+      input.distribution.voteRewardTreasuryPubkey ?? null,
       input.distribution.buybackTxSig,
+      input.distribution.voteRewardTxSig ?? null,
       input.distribution.voterPotTxSig ?? null,
       input.distribution.status,
     ]

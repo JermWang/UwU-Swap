@@ -187,10 +187,18 @@ export async function POST(req: Request, ctx: { params: { id: string; milestoneI
     }
     const treasury = new PublicKey(treasuryRaw);
 
+    const voteRewardTreasuryRaw = String(process.env.CTS_VOTE_REWARD_FAUCET_OWNER_PUBKEY ?? "").trim();
+    if (!voteRewardTreasuryRaw) {
+      return NextResponse.json({ error: "CTS_VOTE_REWARD_FAUCET_OWNER_PUBKEY is required" }, { status: 500 });
+    }
+    const voteRewardTreasury = new PublicKey(voteRewardTreasuryRaw);
+
     const escrowRef = getEscrowSignerRef(record);
 
-    const buybackLamports = Math.floor(forfeitedLamports * 0.5);
-    const plannedVoterPotLamports = Math.max(0, forfeitedLamports - buybackLamports);
+    const totalBuybackLamports = Math.floor(forfeitedLamports * 0.5);
+    const voteRewardLamports = Math.floor(totalBuybackLamports * 0.1);
+    const buybackLamports = Math.max(0, totalBuybackLamports - voteRewardLamports);
+    const plannedVoterPotLamports = Math.max(0, forfeitedLamports - totalBuybackLamports);
 
     const snapshots = await listRewardVoterSnapshotsByMilestone({ commitmentId, milestoneId });
 
@@ -294,9 +302,12 @@ export async function POST(req: Request, ctx: { params: { id: string; milestoneI
       createdAtUnix: nowUnix,
       forfeitedLamports,
       buybackLamports,
+      voteRewardLamports,
       voterPotLamports: effectiveVoterPotLamports,
       shipBuybackTreasuryPubkey: treasury.toBase58(),
+      voteRewardTreasuryPubkey: voteRewardLamports > 0 ? voteRewardTreasury.toBase58() : undefined,
       buybackTxSig: "pending",
+      voteRewardTxSig: undefined,
       voterPotTxSig: undefined,
       status: "open" as const,
     };
@@ -305,10 +316,18 @@ export async function POST(req: Request, ctx: { params: { id: string; milestoneI
     const existing = !acquired.acquired ? acquired.existing : null;
 
     if (existing) {
-      const expectedVoterPotToTreasury = Math.max(0, (existing.forfeitedLamports - existing.buybackLamports) - existing.voterPotLamports);
+      const expectedVoterPotToTreasury = Math.max(
+        0,
+        existing.forfeitedLamports - (existing.buybackLamports + existing.voteRewardLamports) - existing.voterPotLamports
+      );
+
+      const totalBuybackMatches = existing.buybackLamports + existing.voteRewardLamports === totalBuybackLamports;
+      const voteRewardTreasuryMatches =
+        existing.voteRewardLamports <= 0 || (existing.voteRewardTreasuryPubkey ?? "") === voteRewardTreasury.toBase58();
       if (
         existing.forfeitedLamports !== forfeitedLamports ||
-        existing.buybackLamports !== buybackLamports ||
+        !totalBuybackMatches ||
+        !voteRewardTreasuryMatches ||
         existing.voterPotLamports !== effectiveVoterPotLamports ||
         existing.shipBuybackTreasuryPubkey !== treasury.toBase58() ||
         expectedVoterPotToTreasury !== voterPotToTreasuryLamports
@@ -319,7 +338,8 @@ export async function POST(req: Request, ctx: { params: { id: string; milestoneI
             existing,
             expected: {
               forfeitedLamports,
-              buybackLamports,
+              totalBuybackLamports,
+              voteRewardTreasuryPubkey: voteRewardTreasury.toBase58(),
               voterPotLamports: effectiveVoterPotLamports,
               shipBuybackTreasuryPubkey: treasury.toBase58(),
               voterPotToTreasuryLamports,
@@ -346,6 +366,7 @@ export async function POST(req: Request, ctx: { params: { id: string; milestoneI
     };
 
     let buybackTxSig: string | null = shouldTreatAsUnsetSig(distributionToUse.buybackTxSig) ? null : String(distributionToUse.buybackTxSig);
+    let voteRewardTxSig: string | null = shouldTreatAsUnsetSig(distributionToUse.voteRewardTxSig) ? null : String(distributionToUse.voteRewardTxSig);
     let voterPotTxSig: string | null = distributionToUse.voterPotTxSig ? String(distributionToUse.voterPotTxSig) : null;
 
     if (buybackLamports > 0 && buybackTxSig == null) {
@@ -364,6 +385,36 @@ export async function POST(req: Request, ctx: { params: { id: string; milestoneI
             ? await transferLamportsFromPrivyWallet({ connection, walletId: escrowRef.walletId, fromPubkey: escrowPk, to: treasury, lamports: buybackLamports })
             : await transferLamports({ connection, from: keypairFromBase58Secret(escrowRef.escrowSecretKeyB58), to: treasury, lamports: buybackLamports });
         buybackTxSig = buybackTx.signature;
+      }
+    }
+
+    if (voteRewardLamports > 0 && voteRewardTxSig == null) {
+      const found = await findRecentSystemTransferSignature({
+        connection,
+        fromPubkey: escrowPk,
+        toPubkey: voteRewardTreasury,
+        lamports: voteRewardLamports,
+        limit: 50,
+      });
+      if (found && (!buybackTxSig || found !== buybackTxSig) && (!voterPotTxSig || found !== voterPotTxSig)) {
+        voteRewardTxSig = found;
+      } else {
+        const tx =
+          escrowRef.kind === "privy"
+            ? await transferLamportsFromPrivyWallet({
+                connection,
+                walletId: escrowRef.walletId,
+                fromPubkey: escrowPk,
+                to: voteRewardTreasury,
+                lamports: voteRewardLamports,
+              })
+            : await transferLamports({
+                connection,
+                from: keypairFromBase58Secret(escrowRef.escrowSecretKeyB58),
+                to: voteRewardTreasury,
+                lamports: voteRewardLamports,
+              });
+        voteRewardTxSig = tx.signature;
       }
     }
 
@@ -400,6 +451,7 @@ export async function POST(req: Request, ctx: { params: { id: string; milestoneI
     await setMilestoneFailureDistributionTxSigs({
       distributionId: distributionToUse.id,
       buybackTxSig: buybackTxSig,
+      voteRewardTxSig: voteRewardTxSig,
       voterPotTxSig: voterPotTxSig,
     });
 
@@ -409,9 +461,12 @@ export async function POST(req: Request, ctx: { params: { id: string; milestoneI
       distributionId: distributionToUse.id,
       forfeitedLamports,
       buybackLamports,
+      voteRewardLamports,
+      voteRewardTreasuryPubkey: voteRewardTreasury.toBase58(),
       voterPotLamports: effectiveVoterPotLamports,
       participationWeighted: participationEnabled,
       buybackTxSig,
+      voteRewardTxSig,
       voterPotTxSig,
     });
 
@@ -424,6 +479,11 @@ export async function POST(req: Request, ctx: { params: { id: string; milestoneI
         treasury: treasury.toBase58(),
         lamports: buybackLamports,
         signature: buybackTxSig,
+      },
+      voteRewardTreasury: {
+        treasury: voteRewardTreasury.toBase58(),
+        lamports: voteRewardLamports,
+        signature: voteRewardTxSig,
       },
       voterPot: {
         lamports: effectiveVoterPotLamports,
