@@ -17,7 +17,7 @@ import {
 import { getChainUnixTime, getConnection, getTokenBalanceForMint, hasAnyTokenBalanceForMint } from "../../../../../../lib/solana";
 import { getCachedJupiterPriceUsd, getCachedJupiterPriceUsdAllowStale, setCachedJupiterPriceUsd } from "../../../../../../lib/priceCache";
 import { checkRateLimit } from "../../../../../../lib/rateLimit";
-import { getSafeErrorMessage } from "../../../../../../lib/safeError";
+import { getSafeErrorMessage, redactSensitive } from "../../../../../../lib/safeError";
 
 export const runtime = "nodejs";
 
@@ -74,11 +74,16 @@ function shipMultiplierBpsFromUiAmount(shipUiAmount: number): number {
 
 async function getJupiterUsdPriceForMint(mint: string): Promise<number | null> {
   const url = `https://price.jup.ag/v4/price?ids=${encodeURIComponent(mint)}`;
-  const res = await fetch(url, { cache: "no-store" });
-  const json = (await res.json().catch(() => null)) as any;
-  const price = json?.data?.[mint]?.price;
-  if (typeof price === "number" && Number.isFinite(price) && price > 0) return price;
-  return null;
+  try {
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) return null;
+    const json = (await res.json().catch(() => null)) as any;
+    const price = json?.data?.[mint]?.price;
+    if (typeof price === "number" && Number.isFinite(price) && price > 0) return price;
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 export async function POST(req: Request, ctx: { params: { id: string; milestoneId: string } }) {
@@ -299,9 +304,33 @@ export async function POST(req: Request, ctx: { params: { id: string; milestoneI
     let projectValueUsd = 0;
 
     if (record.tokenMint) {
-      const mintPk = new PublicKey(record.tokenMint);
+      let mintPk: PublicKey;
+      try {
+        mintPk = new PublicKey(record.tokenMint);
+      } catch {
+        return NextResponse.json(
+          {
+            error: "Invalid project token mint",
+            code: "invalid_token_mint",
+            hint: "This project has an invalid token mint configured. Ask the creator/admin to fix the token mint before voting.",
+          },
+          { status: 400 }
+        );
+      }
 
-      const isHolder = await hasAnyTokenBalanceForMint({ connection, owner: signerPk, mint: mintPk });
+      let isHolder = false;
+      try {
+        isHolder = await hasAnyTokenBalanceForMint({ connection, owner: signerPk, mint: mintPk });
+      } catch {
+        return NextResponse.json(
+          {
+            error: "RPC error while checking token holdings",
+            code: "rpc_error",
+            hint: "Voting is temporarily unavailable due to an RPC error. Please try again in a moment.",
+          },
+          { status: 503 }
+        );
+      }
       if (!isHolder) {
         return NextResponse.json(
           {
@@ -315,7 +344,19 @@ export async function POST(req: Request, ctx: { params: { id: string; milestoneI
         );
       }
 
-      const bal = await getTokenBalanceForMint({ connection, owner: signerPk, mint: mintPk });
+      let bal: { uiAmount: number; amountRaw: bigint; decimals: number };
+      try {
+        bal = await getTokenBalanceForMint({ connection, owner: signerPk, mint: mintPk });
+      } catch {
+        return NextResponse.json(
+          {
+            error: "RPC error while fetching token balance",
+            code: "rpc_error",
+            hint: "Voting is temporarily unavailable due to an RPC error. Please try again in a moment.",
+          },
+          { status: 503 }
+        );
+      }
       if (bal.uiAmount <= 0) {
         return NextResponse.json(
           {
@@ -461,6 +502,17 @@ export async function POST(req: Request, ctx: { params: { id: string; milestoneI
       commitment: publicView(updated),
     });
   } catch (e) {
+    try {
+      const raw = e instanceof Error ? `${e.message}\n${e.stack ?? ""}` : String(e);
+      console.error("milestone_signal_error", {
+        commitmentId: id,
+        milestoneId,
+        signerPubkey: typeof body?.signerPubkey === "string" ? body.signerPubkey : undefined,
+        vote: typeof body?.vote === "string" ? body.vote : undefined,
+        error: redactSensitive(raw),
+      });
+    } catch {
+    }
     return NextResponse.json({ error: getSafeErrorMessage(e) }, { status: 500 });
   }
 }
