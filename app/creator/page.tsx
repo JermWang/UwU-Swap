@@ -244,9 +244,16 @@ export default function CreatorDashboardPage() {
 
   const [newMilestoneTitle, setNewMilestoneTitle] = useState<string>("");
   const [newMilestoneUnlockPercent, setNewMilestoneUnlockPercent] = useState<string>("25");
-  const [newMilestoneDueLocal, setNewMilestoneDueLocal] = useState<string>(() => toDatetimeLocalValue(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)));
+  const [newMilestoneDueLocal, setNewMilestoneDueLocal] = useState<string>("");
   const [newMilestoneKind, setNewMilestoneKind] = useState<"manual" | "market_cap">("manual");
   const [newMilestoneThresholdUsd, setNewMilestoneThresholdUsd] = useState<string>("10m");
+
+  useEffect(() => {
+    setNewMilestoneDueLocal((prev) => {
+      if (prev.trim().length) return prev;
+      return toDatetimeLocalValue(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
+    });
+  }, []);
 
   const [editingMilestoneId, setEditingMilestoneId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState<string>("");
