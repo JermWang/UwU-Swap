@@ -449,7 +449,7 @@ export async function POST(req: Request) {
         const inserted = await client.query(
           `insert into vote_reward_distribution_claims (distribution_id, wallet_pubkey, claimed_at_unix, amount_raw, tx_sig)
            select t.distribution_id, $3 as wallet_pubkey, $4 as claimed_at_unix, t.amount_raw, '' as tx_sig
-           from unnest($1::text[], $2::text[]) as t(distribution_id, amount_raw)
+           from unnest($1::text[], $2::bigint[]) as t(distribution_id, amount_raw)
            on conflict (distribution_id, wallet_pubkey) do nothing
            returning distribution_id`,
           [insertedDistributionIds, insertedAmountsRaw, walletPubkey, String(claimedAtUnix)]
