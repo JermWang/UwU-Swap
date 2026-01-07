@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import crypto from "crypto";
 import { PublicKey } from "@solana/web3.js";
 import nacl from "tweetnacl";
 import bs58 from "bs58";
@@ -8,13 +9,23 @@ import {
   getCommitment,
   getRewardApprovalThreshold,
   getRewardMilestoneVoteCounts,
+  getVoteRewardDistribution,
+  insertVoteRewardDistributionAllocations,
   normalizeRewardMilestonesClaimable,
   publicView,
+  tryAcquireVoteRewardDistributionCreate,
   updateRewardTotalsAndMilestones,
   upsertRewardMilestoneSignal,
   upsertRewardVoterSnapshot,
 } from "../../../../../../lib/escrowStore";
-import { getChainUnixTime, getConnection, getTokenBalanceForMint, hasAnyTokenBalanceForMint } from "../../../../../../lib/solana";
+import {
+  getChainUnixTime,
+  getConnection,
+  getTokenBalanceForMint,
+  getTokenProgramIdForMint,
+  hasAnyTokenBalanceForMint,
+  verifyTokenExistsOnChain,
+} from "../../../../../../lib/solana";
 import { getCachedJupiterPriceUsd, getCachedJupiterPriceUsdAllowStale, setCachedJupiterPriceUsd } from "../../../../../../lib/priceCache";
 import { checkRateLimit } from "../../../../../../lib/rateLimit";
 import { getSafeErrorMessage, redactSensitive } from "../../../../../../lib/safeError";
@@ -70,6 +81,30 @@ function shipMultiplierBpsFromUiAmount(shipUiAmount: number): number {
   if (shipUiAmount >= 10_000_000) return 20000;
   if (shipUiAmount >= 100_000) return 13000;
   return 10000;
+}
+
+function isVoteRewardDistributionsEnabled(): boolean {
+  const raw = String(process.env.CTS_ENABLE_VOTE_REWARD_DISTRIBUTIONS ?? "").trim().toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
+}
+
+function getVoteRewardMode(): "pool" | "fixed" {
+  const raw = String(process.env.CTS_VOTE_REWARD_MODE ?? "").trim().toLowerCase();
+  if (raw === "fixed" || raw === "per_vote" || raw === "per-vote" || raw === "per_voter" || raw === "per-voter") return "fixed";
+  if (raw === "pool") return "pool";
+  const perVote = Number(String(process.env.CTS_VOTE_REWARD_PER_VOTE_UI_AMOUNT ?? "").trim());
+  const pool = Number(String(process.env.CTS_VOTE_REWARD_POOL_UI_AMOUNT ?? "").trim());
+  if (Number.isFinite(perVote) && perVote > 0 && (!Number.isFinite(pool) || pool <= 0)) return "fixed";
+  if (Number.isFinite(pool) && pool > 0 && (!Number.isFinite(perVote) || perVote <= 0)) return "pool";
+  if (Number.isFinite(perVote) && perVote > 0) return "fixed";
+  return "pool";
+}
+
+function getVoteRewardPerVoteUiAmount(): number {
+  const raw = String(process.env.CTS_VOTE_REWARD_PER_VOTE_UI_AMOUNT ?? "").trim();
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0 || !Number.isInteger(n)) return 0;
+  return Math.floor(n);
 }
 
 async function getJupiterUsdPriceForMint(mint: string): Promise<number | null> {
@@ -201,6 +236,22 @@ export async function POST(req: Request, ctx: { params: { id: string; milestoneI
         },
         { status: 401 }
       );
+    }
+
+    try {
+      if (record.creatorPubkey) {
+        const creatorPk = new PublicKey(String(record.creatorPubkey));
+        if (creatorPk.equals(signerPk)) {
+          return NextResponse.json(
+            {
+              error: "Creators cannot vote on their own milestones",
+              code: "creator_self_vote_blocked",
+            },
+            { status: 403 }
+          );
+        }
+      }
+    } catch {
     }
 
     const milestones: RewardMilestone[] = Array.isArray(record.milestones) ? (record.milestones.slice() as RewardMilestone[]) : [];
@@ -458,6 +509,63 @@ export async function POST(req: Request, ctx: { params: { id: string; milestoneI
       projectPriceUsd,
       projectValueUsd,
     });
+
+    if (
+      inserted &&
+      withinCutoff &&
+      isVoteRewardDistributionsEnabled() &&
+      getVoteRewardMode() === "fixed" &&
+      Number.isFinite(projectPriceUsd) &&
+      projectPriceUsd > 0
+    ) {
+      try {
+        const perVoteUi = getVoteRewardPerVoteUiAmount();
+        const shipMintRaw = String(process.env.CTS_SHIP_TOKEN_MINT ?? "").trim();
+        const faucetOwnerPubkey = String(process.env.CTS_VOTE_REWARD_FAUCET_OWNER_PUBKEY ?? "").trim();
+        if (perVoteUi > 0 && shipMintRaw && faucetOwnerPubkey) {
+          const mintPk = new PublicKey(shipMintRaw);
+          const tokenProgram = await getTokenProgramIdForMint({ connection, mint: mintPk });
+          const mintInfo = await verifyTokenExistsOnChain({ connection, mint: mintPk });
+          const decimals = Number(mintInfo.decimals ?? 0);
+          if (mintInfo.exists && mintInfo.isMintAccount && Number.isFinite(decimals) && decimals >= 0 && decimals <= 18) {
+            const amountRaw = (BigInt(perVoteUi) * 10n ** BigInt(decimals)).toString();
+            const existing = await getVoteRewardDistribution({ commitmentId: id, milestoneId });
+
+            const dist =
+              existing ??
+              (
+                await (async () => {
+                  const distribution = {
+                    id: crypto.randomBytes(16).toString("hex"),
+                    commitmentId: id,
+                    milestoneId,
+                    createdAtUnix: nowUnix,
+                    mintPubkey: mintPk.toBase58(),
+                    tokenProgramPubkey: tokenProgram.toBase58(),
+                    poolAmountRaw: "0",
+                    faucetOwnerPubkey: new PublicKey(faucetOwnerPubkey).toBase58(),
+                    status: "open" as const,
+                  };
+                  const acquired = await tryAcquireVoteRewardDistributionCreate({ distribution });
+                  return acquired.acquired ? distribution : acquired.existing;
+                })()
+              );
+
+            if (
+              dist.mintPubkey === mintPk.toBase58() &&
+              dist.tokenProgramPubkey === tokenProgram.toBase58() &&
+              dist.faucetOwnerPubkey === new PublicKey(faucetOwnerPubkey).toBase58()
+            ) {
+              await insertVoteRewardDistributionAllocations({
+                distributionId: dist.id,
+                allocations: [{ distributionId: dist.id, walletPubkey: signerPk.toBase58(), amountRaw, weight: 1 }],
+              });
+            }
+          }
+        }
+      } catch {
+      }
+    }
 
     if (withinCutoff && record.tokenMint) {
       await upsertRewardVoterSnapshot({

@@ -428,10 +428,11 @@ export default function DashboardPage() {
                         <div className={styles.rowTitle}>{name}</div>
                         <div className={styles.rowMeta}>
                           {String(h.vote)} · {formatUnix(Number(h.createdAtUnix))}
+                          {Number(h.projectValueUsd) > 0 ? ` · weight $${Math.round(Number(h.projectValueUsd)).toLocaleString("en-US")}` : ""}
                         </div>
                       </div>
                       <div className={styles.rowRight}>
-                        <div className={styles.amount}>{String(h.projectValueUsd ? Math.round(h.projectValueUsd).toLocaleString("en-US") : "")}</div>
+                        <div className={styles.amount}>1</div>
                       </div>
                     </div>
                   );
