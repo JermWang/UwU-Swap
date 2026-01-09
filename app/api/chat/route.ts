@@ -33,17 +33,20 @@ function heuristicTransferActionFromText(text: string): ChatAction | null {
   if (!hasSendKeyword) return null;
 
   const amountMatch = raw.match(/(\d+(?:\.\d+)?)\s*(?:sol|SOL|◎)/i);
-  const destMatch = raw.match(/([1-9A-HJ-NP-Za-km-z]{32,44})/);
+  const destMatch = raw.match(/([1-9A-HJ-NP-Za-km-z]{32,44}|[a-z0-9-]{1,63}\.sol)/i);
   if (!amountMatch || !destMatch) return null;
 
   const amountSol = Number(amountMatch[1]);
   const destination = String(destMatch[1] ?? "").trim();
   if (!Number.isFinite(amountSol) || amountSol <= 0) return null;
 
-  try {
-    new PublicKey(destination);
-  } catch {
-    return null;
+  // Allow .sol domains to be resolved client-side.
+  if (!destination.toLowerCase().endsWith(".sol")) {
+    try {
+      new PublicKey(destination);
+    } catch {
+      return null;
+    }
   }
 
   return { type: "transfer", asset: "SOL", amountSol, destination };
@@ -79,10 +82,14 @@ function validateTransferAction(action: any): ChatAction | null {
 
   const destination = String(action.destination ?? "").trim();
   if (!destination) return null;
-  try {
-    new PublicKey(destination);
-  } catch {
-    return null;
+
+  // Accept either a base58 pubkey OR a .sol domain (resolved in client before creating a plan).
+  if (!destination.toLowerCase().endsWith(".sol")) {
+    try {
+      new PublicKey(destination);
+    } catch {
+      return null;
+    }
   }
 
   return { type: "transfer", asset: "SOL", amountSol, destination };
@@ -182,6 +189,7 @@ export async function POST(req: NextRequest) {
       "Current product reality note: connected-wallet private transfers exist; Quick Send may be disabled until it is ready.",
       "Never request or expose private keys, secrets, or API keys.",
       "Output must be STRICT JSON with shape: { reply: string, action: {type: 'transfer', asset:'SOL', amountSol:number, destination:string} | {type:'none'} | null }.",
+      "For transfer actions, destination can be either a Solana base58 address OR a .sol domain.",
       "Only include an action when the user intent is explicit (e.g. 'send 0.5 SOL to ...').",
       "If the user is asking questions, action must be null.",
       `Personality JSON: ${personality}`,
