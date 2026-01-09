@@ -12,6 +12,10 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => ({} as any));
     const raw = String(body?.txBase64 ?? "").trim();
     const confirm = body?.confirm === true;
+    const minContextSlot =
+      typeof body?.minContextSlot === "number" && Number.isFinite(body.minContextSlot)
+        ? Math.floor(body.minContextSlot)
+        : undefined;
 
     if (!raw) {
       return NextResponse.json({ error: "Missing txBase64" }, { status: 400 });
@@ -42,6 +46,7 @@ export async function POST(req: NextRequest) {
             skipPreflight: false,
             preflightCommitment: "processed",
             maxRetries: 3,
+            minContextSlot,
           })
         );
         break;
@@ -78,7 +83,14 @@ export async function POST(req: NextRequest) {
     }
 
     if (!signature) {
-      return NextResponse.json({ error: "Failed to send transaction after retries" }, { status: 500 });
+      // Common case: blockhash expired / not found -> client must re-sign with a fresh blockhash.
+      return NextResponse.json(
+        {
+          error: "Blockhash not found. Please re-sign with a fresh blockhash.",
+          code: "BLOCKHASH_NOT_FOUND",
+        },
+        { status: 409 }
+      );
     }
 
     // Important: by default we return immediately after broadcast so the client UI can
@@ -90,6 +102,17 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ signature, confirmed: false }, { headers: { "Cache-Control": "no-store" } });
   } catch (e) {
-    return NextResponse.json({ error: getSafeErrorMessage(e) }, { status: 500 });
+    const msg = getSafeErrorMessage(e);
+    if (msg.toLowerCase().includes("blockhash not found")) {
+      return NextResponse.json(
+        {
+          error: msg,
+          code: "BLOCKHASH_NOT_FOUND",
+        },
+        { status: 409 }
+      );
+    }
+
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

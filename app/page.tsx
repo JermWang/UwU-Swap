@@ -518,39 +518,64 @@ Hold $UWU tokens for zero-fee transfers!`,
         };
       }
 
-      const blockhashRes = await fetch("/api/solana/blockhash", { cache: "no-store" });
-      const bh = await blockhashRes.json().catch(() => null);
-      if (!blockhashRes.ok || !bh?.blockhash || typeof bh?.lastValidBlockHeight !== "number") {
-        throw new Error(typeof bh?.error === "string" ? bh.error : "Failed to fetch latest blockhash");
-      }
-
-      const tx = new Transaction();
-      tx.recentBlockhash = String(bh.blockhash);
-      tx.lastValidBlockHeight = Number(bh.lastValidBlockHeight);
-      tx.feePayer = publicKey;
-
       const { SystemProgram } = await import("@solana/web3.js");
-      tx.add(
-        SystemProgram.transfer({
-          fromPubkey: publicKey,
-          toPubkey: new PublicKey(planData.firstBurnerPubkey),
-          lamports: Number(solToLamports(planData.amount)),
-        })
-      );
 
-      const signedTx = await signTransaction(tx);
+      const signAndBroadcastOnce = async (): Promise<string> => {
+        const blockhashRes = await fetch("/api/solana/blockhash", { cache: "no-store" });
+        const bh = await blockhashRes.json().catch(() => null);
+        if (!blockhashRes.ok || !bh?.blockhash || typeof bh?.lastValidBlockHeight !== "number") {
+          throw new Error(typeof bh?.error === "string" ? bh.error : "Failed to fetch latest blockhash");
+        }
 
-      const sendRes = await fetch("/api/solana/send-raw-transaction", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ txBase64: bytesToBase64(signedTx.serialize()) }),
-        cache: "no-store",
-      });
-      const sent = await sendRes.json().catch(() => null);
-      if (!sendRes.ok || !sent?.signature) {
-        throw new Error(typeof sent?.error === "string" ? sent.error : "Failed to broadcast transaction");
+        const tx = new Transaction();
+        tx.recentBlockhash = String(bh.blockhash);
+        tx.lastValidBlockHeight = Number(bh.lastValidBlockHeight);
+        tx.feePayer = publicKey;
+        tx.add(
+          SystemProgram.transfer({
+            fromPubkey: publicKey,
+            toPubkey: new PublicKey(planData.firstBurnerPubkey),
+            lamports: Number(solToLamports(planData.amount)),
+          })
+        );
+
+        const signedTx = await signTransaction(tx);
+
+        const sendRes = await fetch("/api/solana/send-raw-transaction", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            txBase64: bytesToBase64(signedTx.serialize()),
+            minContextSlot: typeof bh?.minContextSlot === "number" ? bh.minContextSlot : undefined,
+          }),
+          cache: "no-store",
+        });
+        const sent = await sendRes.json().catch(() => null);
+        if (!sendRes.ok || !sent?.signature) {
+          const serverMsg = typeof sent?.error === "string" ? sent.error : "Failed to broadcast transaction";
+          const code = typeof sent?.code === "string" ? sent.code : "";
+          const err: any = new Error(serverMsg);
+          err.code = code;
+          err.status = sendRes.status;
+          throw err;
+        }
+
+        return String(sent.signature);
+      };
+
+      let signature = "";
+      try {
+        signature = await signAndBroadcastOnce();
+      } catch (e: any) {
+        const msg = e instanceof Error ? e.message : String(e);
+        const code = String((e as any)?.code ?? "");
+        const lower = msg.toLowerCase();
+        const isBlockhash = code === "BLOCKHASH_NOT_FOUND" || lower.includes("blockhash not found");
+        if (!isBlockhash) throw e;
+
+        addMessage("assistant", "Blockhash expired while waiting for approval — please sign again to retry.");
+        signature = await signAndBroadcastOnce();
       }
-      const signature = String(sent.signature);
 
       // Close modal and update state
       setTransferModalData(null);
