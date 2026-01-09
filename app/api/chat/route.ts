@@ -149,7 +149,8 @@ async function callOpenAiChat(input: {
   try {
     const parsed = JSON.parse(content);
     const reply = String(parsed?.reply ?? "").trim();
-    const action = validateTransferAction(parsed?.action) ?? null;
+    const validated = validateTransferAction(parsed?.action) ?? null;
+    const action = validated && validated.type === "none" ? null : validated;
     return { reply: reply || content, action: action ?? heuristic };
   } catch {
     return { reply: content, action: heuristic };
@@ -207,7 +208,7 @@ export async function POST(req: NextRequest) {
 
     // Normalize empty replies.
     const reply = String(result.reply ?? "").trim() || "(no response)";
-    const action = result.action && result.action.type === "none" ? null : result.action;
+    const action = result.action;
 
     return NextResponse.json({ reply, action } satisfies ChatResponse, {
       headers: { "Cache-Control": "no-store" },
