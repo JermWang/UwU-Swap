@@ -286,7 +286,7 @@ body {
   align-items: center;
   padding: 40px 20px;
   position: relative;
-  background: rgba(246, 237, 226, 0.9);
+  background: transparent;
   overflow-y: auto;
 }
 
@@ -313,7 +313,7 @@ body {
 .swap-title {
   font-size: 26px;
   font-weight: 800;
-  color: var(--dark-bg);
+  color: var(--text-primary);
   margin-bottom: 2px;
   font-family: 'Inter', sans-serif;
   letter-spacing: -1px;
@@ -327,7 +327,7 @@ body {
 
 .swap-subtitle {
   font-size: 13px;
-  color: rgba(10, 10, 15, 0.7); /* Changed to darker color for readability */
+  color: var(--text-secondary);
   font-weight: 400;
   margin-bottom: 16px;
 }

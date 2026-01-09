@@ -55,7 +55,7 @@ export default function AsciiShaderBackground() {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const ctx = canvas.getContext("2d", { alpha: false });
+    const ctx = canvas.getContext("2d", { alpha: true });
     if (!ctx) return;
 
     // Slightly larger cells for performance (12x18 instead of 10x16)
@@ -164,8 +164,7 @@ export default function AsciiShaderBackground() {
     };
 
     const draw = (time: number) => {
-      ctx.fillStyle = "#0A0A0F";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
 
       ctx.font = `${CELL_HEIGHT}px 'JetBrains Mono', monospace`;
       ctx.textBaseline = "top";
@@ -209,15 +208,6 @@ export default function AsciiShaderBackground() {
         }
       }
 
-      // Vignette overlay
-      const vignette = ctx.createRadialGradient(
-        canvas.width / 2, canvas.height / 2, 0,
-        canvas.width / 2, canvas.height / 2, canvas.width * 0.7
-      );
-      vignette.addColorStop(0, "rgba(10, 10, 15, 0)");
-      vignette.addColorStop(1, "rgba(10, 10, 15, 0.6)");
-      ctx.fillStyle = vignette;
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
     };
 
     const animate = (timestamp: number) => {
@@ -251,7 +241,7 @@ export default function AsciiShaderBackground() {
         width: '100vw',
         height: '100vh',
         pointerEvents: 'none',
-        zIndex: -1,
+        zIndex: 0,
       }}
     />
   );
