@@ -11,6 +11,7 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({} as any));
     const raw = String(body?.txBase64 ?? "").trim();
+    const confirm = body?.confirm === true;
 
     if (!raw) {
       return NextResponse.json({ error: "Missing txBase64" }, { status: 400 });
@@ -80,9 +81,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Failed to send transaction after retries" }, { status: 500 });
     }
 
-    await confirmSignatureViaRpc(connection, signature, finality);
+    // Important: by default we return immediately after broadcast so the client UI can
+    // start polling/routing indicators without waiting on RPC confirmation.
+    if (confirm) {
+      await confirmSignatureViaRpc(connection, signature, finality);
+      return NextResponse.json({ signature, confirmed: true }, { headers: { "Cache-Control": "no-store" } });
+    }
 
-    return NextResponse.json({ signature }, { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json({ signature, confirmed: false }, { headers: { "Cache-Control": "no-store" } });
   } catch (e) {
     return NextResponse.json({ error: getSafeErrorMessage(e) }, { status: 500 });
   }
