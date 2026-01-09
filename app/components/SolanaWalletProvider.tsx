@@ -1,8 +1,8 @@
 "use client";
 
-import { ReactNode, useCallback, useMemo } from "react";
+import { ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { clusterApiUrl } from "@solana/web3.js";
-import { WalletAdapterNetwork, WalletError, WalletReadyState } from "@solana/wallet-adapter-base";
+import { WalletAdapterNetwork, WalletError } from "@solana/wallet-adapter-base";
 import { ConnectionProvider, WalletProvider } from "@solana/wallet-adapter-react";
 import { WalletModalProvider } from "@solana/wallet-adapter-react-ui";
 import { PhantomWalletAdapter } from "@solana/wallet-adapter-phantom";
@@ -29,8 +29,31 @@ export default function SolanaWalletProvider({ children }: { children: ReactNode
     return clusterApiUrl("mainnet-beta");
   }, []);
 
-  const wallets = useMemo(() => {
-    return [new PhantomWalletAdapter(), new SolflareWalletAdapter({ network }), new BackpackWalletAdapter()];
+  const [wallets, setWallets] = useState<any[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let tries = 0;
+
+    const init = () => {
+      if (cancelled) return;
+      setWallets([new PhantomWalletAdapter(), new SolflareWalletAdapter({ network }), new BackpackWalletAdapter()]);
+    };
+
+    const interval = setInterval(() => {
+      tries += 1;
+      const w = window as any;
+      const hasInjectedProvider = !!w?.solana || !!w?.solflare || !!w?.backpack;
+      if (hasInjectedProvider || tries >= 20) {
+        clearInterval(interval);
+        init();
+      }
+    }, 100);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
   }, [network]);
 
   const onError = useCallback((error: WalletError) => {
@@ -47,25 +70,9 @@ export default function SolanaWalletProvider({ children }: { children: ReactNode
     console.error("[wallet] error", details, { cause: anyErr?.cause, inner: anyErr?.error }, error);
   }, []);
 
-  const autoConnect = useCallback(async (adapter: any) => {
-    try {
-      const readyState: WalletReadyState | undefined = adapter?.readyState;
-      if (readyState !== WalletReadyState.Installed && readyState !== WalletReadyState.Loadable) return false;
-
-      await new Promise((r) => setTimeout(r, 0));
-      if (typeof adapter?.autoConnect === "function") {
-        await adapter.autoConnect();
-        return true;
-      }
-      return false;
-    } catch {
-      return false;
-    }
-  }, []);
-
   return (
     <ConnectionProvider endpoint={endpoint}>
-      <WalletProvider wallets={wallets} autoConnect={autoConnect} onError={onError}>
+      <WalletProvider wallets={wallets} autoConnect onError={onError}>
         <WalletModalProvider>{children}</WalletModalProvider>
       </WalletProvider>
     </ConnectionProvider>
