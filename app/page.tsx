@@ -101,7 +101,7 @@ Hold $UWU tokens for zero-fee transfers!`,
   const [transferModalData, setTransferModalData] = useState<TransferModalData | null>(null);
   const [isModalSigning, setIsModalSigning] = useState(false);
 
-  const effectiveSwapMode: "custodial" | "non-custodial" = quickSendEnabled ? swapMode : "custodial";
+  const effectiveSwapMode: "custodial" | "non-custodial" = swapMode;
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -670,7 +670,6 @@ Hold $UWU tokens for zero-fee transfers!`,
               <button
                 className={`swap-mode-tab ${swapMode === "non-custodial" ? "swap-mode-tab--active" : ""}`}
                 onClick={() => setSwapMode("non-custodial")}
-                disabled={!quickSendEnabled}
               >
                 Non-Custodial
               </button>
