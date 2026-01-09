@@ -1840,3 +1840,299 @@ body {
   border-color: var(--cyber-green);
   box-shadow: 0 0 20px rgba(0, 255, 136, 0.2);
 }
+
+/* ============================================================================
+   Transfer Confirmation Modal
+   ============================================================================ */
+
+.transfer-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+  animation: fadeIn 0.2s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.transfer-modal {
+  background: var(--dark-card);
+  border: 1px solid var(--cyber-green);
+  border-radius: 16px;
+  width: 100%;
+  max-width: 420px;
+  box-shadow: var(--glow-green), var(--shadow-dark);
+  animation: slideUp 0.3s ease-out;
+}
+
+@keyframes slideUp {
+  from { 
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to { 
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.transfer-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--dark-border);
+}
+
+.transfer-modal-header h2 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.transfer-modal-close {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 1.5rem;
+  cursor: pointer;
+  padding: 4px 8px;
+  line-height: 1;
+  transition: color 0.2s;
+}
+
+.transfer-modal-close:hover {
+  color: var(--text-primary);
+}
+
+.transfer-modal-body {
+  padding: 24px;
+}
+
+.transfer-modal-amount {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.transfer-modal-amount-value {
+  font-size: 3rem;
+  font-weight: 700;
+  color: var(--cyber-green);
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.transfer-modal-amount-unit {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.transfer-modal-arrow {
+  display: flex;
+  justify-content: center;
+  color: var(--cyber-green);
+  margin: 12px 0;
+  opacity: 0.7;
+}
+
+.transfer-modal-destination {
+  background: var(--dark-bg);
+  border: 1px solid var(--dark-border);
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 20px;
+}
+
+.transfer-modal-destination label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 8px;
+}
+
+.transfer-modal-address {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.transfer-modal-address code {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 1rem;
+  color: var(--text-primary);
+  background: var(--dark-card);
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--dark-border);
+}
+
+.transfer-modal-address--domain {
+  flex-direction: column;
+  gap: 4px;
+}
+
+.transfer-modal-domain {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--cyber-green);
+}
+
+.transfer-modal-resolved {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.transfer-modal-resolved-label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.transfer-modal-resolved code {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.transfer-modal-details {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.transfer-modal-detail {
+  background: var(--dark-bg);
+  border: 1px solid var(--dark-border);
+  border-radius: 8px;
+  padding: 12px;
+  text-align: center;
+}
+
+.transfer-modal-detail-label {
+  display: block;
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 4px;
+}
+
+.transfer-modal-detail-value {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.transfer-modal-detail-value--free {
+  color: var(--cyber-green);
+}
+
+.transfer-modal-badge {
+  grid-column: 1 / -1;
+  background: linear-gradient(135deg, rgba(0, 255, 136, 0.1) 0%, rgba(0, 255, 204, 0.1) 100%);
+  border: 1px solid var(--cyber-green);
+  border-radius: 8px;
+  padding: 8px 16px;
+  text-align: center;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--cyber-green);
+}
+
+.transfer-modal-info {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: rgba(0, 255, 136, 0.05);
+  border: 1px solid rgba(0, 255, 136, 0.2);
+  border-radius: 8px;
+  padding: 12px;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.transfer-modal-info svg {
+  flex-shrink: 0;
+  color: var(--cyber-green);
+  margin-top: 2px;
+}
+
+.transfer-modal-footer {
+  display: flex;
+  gap: 12px;
+  padding: 20px 24px;
+  border-top: 1px solid var(--dark-border);
+}
+
+.transfer-modal-btn {
+  flex: 1;
+  padding: 14px 20px;
+  border-radius: 10px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.transfer-modal-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.transfer-modal-btn--cancel {
+  background: var(--dark-bg);
+  border: 1px solid var(--dark-border);
+  color: var(--text-secondary);
+}
+
+.transfer-modal-btn--cancel:hover:not(:disabled) {
+  background: var(--dark-card-hover);
+  color: var(--text-primary);
+}
+
+.transfer-modal-btn--confirm {
+  background: linear-gradient(135deg, var(--cyber-green) 0%, var(--cyber-green-dark) 100%);
+  border: none;
+  color: var(--dark-bg);
+}
+
+.transfer-modal-btn--confirm:hover:not(:disabled) {
+  box-shadow: var(--glow-green);
+  transform: translateY(-1px);
+}
+
+.transfer-modal-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid transparent;
+  border-top-color: var(--dark-bg);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}

@@ -19,6 +19,8 @@ import {
   ChatMessage,
   ParsedTransferCommand,
 } from "./lib/uwuChat";
+import TransferModal, { TransferModalData } from "./components/TransferModal";
+import { resolveAddressOrDomain, isSolDomain } from "./lib/solDomains";
 
 type TransferState = {
   planId: string;
@@ -96,6 +98,8 @@ Hold $UWU tokens for zero-fee transfers!`,
   const [quickSendState, setQuickSendState] = useState<QuickSendState | null>(null);
   const [quickSendForm, setQuickSendForm] = useState({ destination: "", amount: "" });
   const [elapsedTime, setElapsedTime] = useState(0);
+  const [transferModalData, setTransferModalData] = useState<TransferModalData | null>(null);
+  const [isModalSigning, setIsModalSigning] = useState(false);
 
   const effectiveSwapMode: "custodial" | "non-custodial" = quickSendEnabled ? swapMode : "custodial";
 
@@ -407,13 +411,32 @@ Hold $UWU tokens for zero-fee transfers!`,
     setIsProcessing(true);
 
     try {
+      // Resolve .sol domain if needed
+      const rpcUrl = process.env.NEXT_PUBLIC_SOLANA_RPC_URL || "https://api.mainnet-beta.solana.com";
+      const connection = new Connection(rpcUrl, "confirmed");
+      
+      let resolvedAddress = cmd.destination;
+      const originalDestination = cmd.destination;
+      
+      if (isSolDomain(cmd.destination)) {
+        addMessage("assistant", `Resolving ${cmd.destination}...`);
+        const resolved = await resolveAddressOrDomain(cmd.destination, connection);
+        if (!resolved) {
+          addMessage("assistant", `❌ Could not resolve .sol domain: ${cmd.destination}`);
+          setIsProcessing(false);
+          return;
+        }
+        resolvedAddress = resolved.pubkey.toBase58();
+        addMessage("assistant", `✓ Resolved to \`${resolvedAddress.slice(0, 6)}...${resolvedAddress.slice(-4)}\``);
+      }
+
       // Create routing plan
       const planRes = await fetch("/api/transfer", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           fromWallet: publicKey.toBase58(),
-          toWallet: cmd.destination,
+          toWallet: resolvedAddress,
           amountSol: cmd.amount,
           asset: cmd.asset === "SOL" ? null : cmd.asset,
         }),
@@ -429,32 +452,40 @@ Hold $UWU tokens for zero-fee transfers!`,
 
       const feeSol = lamportsToSol(BigInt(planData.feeLamports || "0"));
 
-      // Show confirmation
+      // Show confirmation modal instead of auto-signing
+      setTransferModalData({
+        amount: cmd.amount,
+        destination: originalDestination,
+        resolvedAddress,
+        hopCount: planData.hopCount,
+        estimatedTimeMs: planData.estimatedCompletionMs,
+        feeApplied: planData.feeApplied,
+        feeSol,
+        planId: planData.id,
+        firstBurnerPubkey: planData.firstBurnerPubkey,
+      });
+
+      // Also add a chat message
       addMessage(
         "assistant",
-        generateTransferConfirmation({
-          amount: cmd.amount,
-          destination: cmd.destination,
-          estimatedTimeMs: planData.estimatedCompletionMs,
-          hopCount: planData.hopCount,
-          feeApplied: planData.feeApplied,
-          feeSol,
-        }),
+        `I've prepared your transfer! Please review the details and confirm~ ✧`,
         { transferId: planData.id, status: "pending" }
       );
 
-      setTransferState({
-        planId: planData.id,
-        status: "signing",
-        hopCount: planData.hopCount,
-        currentHop: 0,
-        firstBurnerPubkey: planData.firstBurnerPubkey,
-        amountLamports: solToLamports(cmd.amount).toString(),
-      });
+    } catch (e) {
+      const error = e instanceof Error ? e.message : String(e);
+      addMessage("assistant", `❌ Error: ${error}`);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
 
-      // Build and sign initial funding transaction
-      addMessage("system", "🔐 Please sign the transaction in your wallet...");
+  const handleModalConfirm = async () => {
+    if (!transferModalData || !publicKey || !signTransaction) return;
 
+    setIsModalSigning(true);
+
+    try {
       const rpcUrl = process.env.NEXT_PUBLIC_SOLANA_RPC_URL || "https://api.mainnet-beta.solana.com";
       const connection = new Connection(rpcUrl, "confirmed");
       const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
@@ -468,8 +499,8 @@ Hold $UWU tokens for zero-fee transfers!`,
       tx.add(
         SystemProgram.transfer({
           fromPubkey: publicKey,
-          toPubkey: new PublicKey(planData.firstBurnerPubkey),
-          lamports: Number(solToLamports(cmd.amount)),
+          toPubkey: new PublicKey(transferModalData.firstBurnerPubkey),
+          lamports: Number(solToLamports(transferModalData.amount)),
         })
       );
 
@@ -477,10 +508,21 @@ Hold $UWU tokens for zero-fee transfers!`,
       const signature = await connection.sendRawTransaction(signedTx.serialize());
       await connection.confirmTransaction({ signature, blockhash, lastValidBlockHeight }, "confirmed");
 
-      addMessage("assistant", `✅ Initial transfer signed! TX: \`${signature.slice(0, 12)}...\`\n\nNow routing through burner wallets...`);
+      // Close modal and update state
+      setTransferModalData(null);
+      
+      setTransferState({
+        planId: transferModalData.planId,
+        status: "awaiting_funding",
+        hopCount: transferModalData.hopCount,
+        currentHop: 0,
+        firstBurnerPubkey: transferModalData.firstBurnerPubkey,
+        amountLamports: solToLamports(transferModalData.amount).toString(),
+      });
 
-      setTransferState((prev) => (prev ? { ...prev, status: "awaiting_funding", currentHop: 0 } : null));
-      startTransferPolling({ planId: planData.id, fundingSignature: signature });
+      addMessage("assistant", `✅ Transfer signed! TX: \`${signature.slice(0, 12)}...\`\n\nNow routing through burner wallets...`);
+      startTransferPolling({ planId: transferModalData.planId, fundingSignature: signature });
+
     } catch (e) {
       const error = e instanceof Error ? e.message : String(e);
       addMessage(
@@ -492,10 +534,15 @@ Hold $UWU tokens for zero-fee transfers!`,
           error,
         })
       );
-      setTransferState((prev) => (prev ? { ...prev, status: "failed" } : null));
+      setTransferModalData(null);
     } finally {
-      setIsProcessing(false);
+      setIsModalSigning(false);
     }
+  };
+
+  const handleModalCancel = () => {
+    setTransferModalData(null);
+    addMessage("assistant", "Transfer cancelled~ Let me know if you want to try again!");
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -907,6 +954,15 @@ Hold $UWU tokens for zero-fee transfers!`,
         </div>
 
         </div>
+
+      {/* Transfer Confirmation Modal */}
+      <TransferModal
+        isOpen={!!transferModalData}
+        data={transferModalData}
+        onConfirm={handleModalConfirm}
+        onCancel={handleModalCancel}
+        isLoading={isModalSigning}
+      />
     </main>
   );
 }
