@@ -7,11 +7,25 @@ import { getSafeErrorMessage } from "../../../lib/safeError";
 
 export const runtime = "nodejs";
 
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error("RPC timeout")), ms);
+  });
+  return Promise.race([
+    p.finally(() => {
+      if (timer) clearTimeout(timer);
+    }),
+    timeout,
+  ]);
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({} as any));
     const raw = String(body?.txBase64 ?? "").trim();
     const confirm = body?.confirm === true;
+    const skipPreflight = body?.skipPreflight !== false;
     const minContextSlot =
       typeof body?.minContextSlot === "number" && Number.isFinite(body.minContextSlot)
         ? Math.floor(body.minContextSlot)
@@ -24,6 +38,30 @@ export async function POST(req: NextRequest) {
     const bytes = Buffer.from(raw, "base64");
     const connection = getConnection();
     const finality = getServerCommitment();
+
+    const isCommitmentSatisfied = (current: string | null | undefined, desired: typeof finality): boolean => {
+      const c = String(current ?? "");
+      if (desired === "processed") return c === "processed" || c === "confirmed" || c === "finalized";
+      if (desired === "confirmed") return c === "confirmed" || c === "finalized";
+      if (desired === "finalized") return c === "finalized";
+      return c === desired;
+    };
+
+    const tryConfirmCandidateSigFast = async (sig: string): Promise<boolean> => {
+      const deadline = Date.now() + 4_000;
+      while (Date.now() < deadline) {
+        const st = await withRetry(() => connection.getSignatureStatuses([sig], { searchTransactionHistory: true }), {
+          attempts: 2,
+          baseDelayMs: 150,
+        });
+        const s: any = st?.value?.[0];
+        if (s?.err) return false;
+        const confirmationStatus = typeof s?.confirmationStatus === "string" ? s.confirmationStatus : null;
+        if (confirmationStatus && isCommitmentSatisfied(confirmationStatus, finality)) return true;
+        await new Promise((r) => setTimeout(r, 350));
+      }
+      return false;
+    };
 
     // Retry loop for blockhash issues (similar to CommitToShip's working implementation)
     const maxAttempts = 4;
@@ -41,13 +79,14 @@ export async function POST(req: NextRequest) {
 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       try {
-        signature = await withRetry(() =>
+        signature = await withTimeout(
           connection.sendRawTransaction(bytes, {
-            skipPreflight: false,
+            skipPreflight,
             preflightCommitment: "processed",
-            maxRetries: 3,
+            maxRetries: 2,
             minContextSlot,
-          })
+          }),
+          10_000
         );
         break;
       } catch (e) {
@@ -61,13 +100,19 @@ export async function POST(req: NextRequest) {
           lower.includes("blockheight exceeded") ||
           lower.includes("timed out") ||
           lower.includes("timeout") ||
-          lower.includes("node is behind");
+          lower.includes("node is behind") ||
+          lower.includes("rpc timeout");
 
         // If we have a candidate signature, try to confirm it (tx may have landed)
         if (candidateSig) {
           try {
-            await confirmSignatureViaRpc(connection, candidateSig, finality);
-            return NextResponse.json({ signature: candidateSig }, { headers: { "Cache-Control": "no-store" } });
+            const ok = await tryConfirmCandidateSigFast(candidateSig);
+            if (ok) {
+              return NextResponse.json(
+                { signature: candidateSig, confirmed: true },
+                { headers: { "Cache-Control": "no-store" } }
+              );
+            }
           } catch {
             // ignore - tx didn't land
           }
@@ -78,7 +123,7 @@ export async function POST(req: NextRequest) {
         }
 
         // Wait before retry
-        await new Promise((r) => setTimeout(r, 350 + attempt * 500));
+        await new Promise((r) => setTimeout(r, 250 + attempt * 350));
       }
     }
 
@@ -93,10 +138,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Important: by default we return immediately after broadcast so the client UI can
-    // start polling/routing indicators without waiting on RPC confirmation.
     if (confirm) {
-      await confirmSignatureViaRpc(connection, signature, finality);
+      await withTimeout(confirmSignatureViaRpc(connection, signature, finality), 20_000);
       return NextResponse.json({ signature, confirmed: true }, { headers: { "Cache-Control": "no-store" } });
     }
 
