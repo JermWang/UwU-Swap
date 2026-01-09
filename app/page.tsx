@@ -612,7 +612,7 @@ Hold $UWU tokens for zero-fee transfers!`,
             className="swap-card-bg"
           />
           <div className="swap-card-header">
-            <h2 className="swap-card-title">{effectiveSwapMode === "custodial" ? "AI Assistant" : "Quick Send"}</h2>
+            <h2 className="swap-card-title">{effectiveSwapMode === "custodial" ? "AI Assistant" : "Non-Custodial"}</h2>
             <div className="swap-mode-tabs">
               <button
                 className={`swap-mode-tab ${swapMode === "custodial" ? "swap-mode-tab--active" : ""}`}
@@ -625,7 +625,7 @@ Hold $UWU tokens for zero-fee transfers!`,
                 onClick={() => setSwapMode("non-custodial")}
                 disabled={!quickSendEnabled}
               >
-                Quick Send
+                Non-Custodial
               </button>
             </div>
             </div>
