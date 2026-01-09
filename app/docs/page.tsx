@@ -196,7 +196,7 @@ export default function DocsPage() {
               <div className="docs-card">
                 <p>
                   Uwu Swap provides two modes of operation: <strong>AI Assistant</strong> for conversational 
-                  transfers with wallet connection, and <strong>Quick Send</strong> (coming soon).
+                  transfers with wallet connection, and <strong>Non-Custodial</strong> mode (coming soon).
                 </p>
                 
                 <div className="docs-steps">
@@ -257,13 +257,13 @@ export default function DocsPage() {
                   </li>
                   <li>
                     <strong>Deterministic Destruction</strong> — After a wallet completes its routing duty, 
-                    its key material is retired from active use and rotated out of circulation
+                    its key material is retired from active use and rotated out of circulation.
                   </li>
                   <li>
-                    <strong>Routing Randomization</strong> — Routing parameters include randomized hop counts and timing jitter
+                    <strong>Routing Randomization</strong> — Routing parameters include randomized hop counts and timing jitter.
                   </li>
                   <li>
-                    <strong>Step-Based Execution</strong> — Transfers execute as a series of steps with status tracking, so failures can be detected and handled
+                    <strong>Step-Based Execution</strong> — Transfers execute as a series of steps with status tracking, so failures can be detected and handled.
                   </li>
                 </ul>
 
@@ -426,8 +426,8 @@ export default function DocsPage() {
                   <div className="docs-faq-item">
                     <h4>Do I need to connect my wallet?</h4>
                     <p>
-                      For <strong>AI Assistant</strong> transfers, yes—you&apos;ll connect a wallet to sign the initial funding transaction.
-                      <strong>Quick Send</strong> (no wallet connect) is coming soon and may be disabled in production until it&apos;s ready.
+                      For <strong>AI Assistant</strong> transfers, yes—you&apos;ll connect a wallet to sign the initial funding transaction. 
+                      <strong>Non-Custodial</strong> mode (no wallet connect) is coming soon.
                     </p>
                   </div>
                   <div className="docs-faq-item">
