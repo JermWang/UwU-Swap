@@ -286,7 +286,7 @@ body {
   align-items: center;
   padding: 40px 20px;
   position: relative;
-  background: var(--cream-bg);
+  background: rgba(246, 237, 226, 0.9);
   overflow-y: auto;
 }
 
