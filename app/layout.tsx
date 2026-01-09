@@ -8,19 +8,28 @@ import AsciiShaderBackground from "./components/AsciiShaderBackground";
 
 export const metadata = {
   title: "Uwu Swap",
-  description: "Privacy-first token transfers on Solana. Send tokens through ephemeral wallet chains to break traceability. Hold $UWU for free transfers!",
+  description: "Untraceable transfers powered by zero-knowledge routing",
   icons: {
     icon: [{ url: "/branding/AI_assistant_avatar.png", type: "image/png" }],
   },
   openGraph: {
     title: "Uwu Swap",
-    description: "Privacy-first token transfers on Solana. Send tokens through ephemeral wallet chains to break traceability.",
+    description: "Untraceable transfers powered by zero-knowledge routing",
     type: "website",
+    images: [
+      {
+        url: "/branding/uwu-swap-banner.png",
+        width: 1200,
+        height: 630,
+        alt: "Uwu Swap - Untraceable transfers powered by zero-knowledge routing",
+      },
+    ],
   },
   twitter: {
     card: "summary_large_image",
     title: "Uwu Swap",
-    description: "Privacy-first token transfers on Solana. Send tokens through ephemeral wallet chains to break traceability.",
+    description: "Untraceable transfers powered by zero-knowledge routing",
+    images: ["/branding/uwu-swap-banner.png"],
   },
 };
 
