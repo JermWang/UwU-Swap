@@ -28,9 +28,20 @@ export function getServerCommitment(): Commitment {
   return raw || "confirmed";
 }
 
+export function getRpcUrls(): string[] {
+  const primary = (process.env.SOLANA_RPC_URL || "https://api.mainnet-beta.solana.com").trim();
+  const fallback = (process.env.SOLANA_RPC_URL_FALLBACK || "https://api.mainnet-beta.solana.com").trim();
+  if (!fallback || fallback === primary) return [primary];
+  return [primary, fallback];
+}
+
+export function getConnectionForRpcUrl(url: string): Connection {
+  const u = String(url ?? "").trim() || "https://api.mainnet-beta.solana.com";
+  return new Connection(u, getServerCommitment());
+}
+
 export function getConnection(): Connection {
-  const url = process.env.SOLANA_RPC_URL || "https://api.mainnet-beta.solana.com";
-  return new Connection(url, getServerCommitment());
+  return getConnectionForRpcUrl(getRpcUrls()[0]);
 }
 
 function isCommitmentSatisfied(current: string | null | undefined, desired: Commitment): boolean {

@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import bs58 from "bs58";
-import { Transaction } from "@solana/web3.js";
+import { Connection, Transaction } from "@solana/web3.js";
 
-import { confirmSignatureViaRpc, getConnection, getServerCommitment, withRetry } from "../../../lib/rpc";
+import { confirmSignatureViaRpc, getConnectionForRpcUrl, getRpcUrls, getServerCommitment, withRetry } from "../../../lib/rpc";
 import { getSafeErrorMessage } from "../../../lib/safeError";
 
 export const runtime = "nodejs";
@@ -36,7 +36,6 @@ export async function POST(req: NextRequest) {
     }
 
     const bytes = Buffer.from(raw, "base64");
-    const connection = getConnection();
     const finality = getServerCommitment();
 
     const isCommitmentSatisfied = (current: string | null | undefined, desired: typeof finality): boolean => {
@@ -47,7 +46,7 @@ export async function POST(req: NextRequest) {
       return c === desired;
     };
 
-    const tryConfirmCandidateSigFast = async (sig: string): Promise<boolean> => {
+    const tryConfirmCandidateSigFast = async (connection: Connection, sig: string): Promise<boolean> => {
       const deadline = Date.now() + 4_000;
       while (Date.now() < deadline) {
         const st = await withRetry(() => connection.getSignatureStatuses([sig], { searchTransactionHistory: true }), {
@@ -63,9 +62,8 @@ export async function POST(req: NextRequest) {
       return false;
     };
 
-    // Retry loop for blockhash issues (similar to CommitToShip's working implementation)
+    const urls = getRpcUrls();
     const maxAttempts = 4;
-    let signature = "";
     let candidateSig = "";
 
     // Try to extract the signature from the signed tx for fallback confirmation
@@ -77,58 +75,75 @@ export async function POST(req: NextRequest) {
       // ignore
     }
 
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
-      try {
-        signature = await withTimeout(
-          connection.sendRawTransaction(bytes, {
-            skipPreflight,
-            preflightCommitment: "processed",
-            maxRetries: 2,
-            minContextSlot,
-          }),
-          10_000
-        );
-        break;
-      } catch (e) {
-        const msg = String((e as any)?.message ?? e ?? "");
-        const lower = msg.toLowerCase();
+    let lastErr: unknown;
 
-        // Check if this is a retryable blockhash error
-        const retryable =
-          (lower.includes("blockhash") && (lower.includes("expired") || lower.includes("not found"))) ||
-          lower.includes("block height exceeded") ||
-          lower.includes("blockheight exceeded") ||
-          lower.includes("timed out") ||
-          lower.includes("timeout") ||
-          lower.includes("node is behind") ||
-          lower.includes("rpc timeout");
+    for (let urlIndex = 0; urlIndex < urls.length; urlIndex++) {
+      const url = urls[urlIndex];
+      const connection = getConnectionForRpcUrl(url);
+      let currentMinContextSlot = minContextSlot;
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        try {
+          const signature = await withTimeout(
+            connection.sendRawTransaction(bytes, {
+              skipPreflight,
+              preflightCommitment: "processed",
+              maxRetries: 2,
+              minContextSlot: currentMinContextSlot,
+            }),
+            10_000
+          );
 
-        // If we have a candidate signature, try to confirm it (tx may have landed)
-        if (candidateSig) {
-          try {
-            const ok = await tryConfirmCandidateSigFast(candidateSig);
-            if (ok) {
-              return NextResponse.json(
-                { signature: candidateSig, confirmed: true },
-                { headers: { "Cache-Control": "no-store" } }
-              );
-            }
-          } catch {
-            // ignore - tx didn't land
+          if (confirm) {
+            await withTimeout(confirmSignatureViaRpc(connection, signature, finality), 20_000);
+            return NextResponse.json({ signature, confirmed: true }, { headers: { "Cache-Control": "no-store" } });
           }
-        }
 
-        if (!retryable || attempt === maxAttempts - 1) {
-          throw e;
-        }
+          return NextResponse.json({ signature, confirmed: false }, { headers: { "Cache-Control": "no-store" } });
+        } catch (e) {
+          lastErr = e;
+          const msg = String((e as any)?.message ?? e ?? "");
+          const lower = msg.toLowerCase();
 
-        // Wait before retry
-        await new Promise((r) => setTimeout(r, 250 + attempt * 350));
+          const retryable =
+            (lower.includes("blockhash") && (lower.includes("expired") || lower.includes("not found"))) ||
+            lower.includes("block height exceeded") ||
+            lower.includes("blockheight exceeded") ||
+            lower.includes("timed out") ||
+            lower.includes("timeout") ||
+            lower.includes("node is behind") ||
+            lower.includes("rpc timeout");
+
+          const minContextSlotRelated =
+            lower.includes("mincontextslot") || lower.includes("min context slot") || lower.includes("node is behind");
+          if (urlIndex > 0 && currentMinContextSlot !== undefined && minContextSlotRelated) {
+            currentMinContextSlot = undefined;
+          }
+
+          if (candidateSig) {
+            try {
+              const ok = await tryConfirmCandidateSigFast(connection, candidateSig);
+              if (ok) {
+                return NextResponse.json(
+                  { signature: candidateSig, confirmed: true },
+                  { headers: { "Cache-Control": "no-store" } }
+                );
+              }
+            } catch {
+              // ignore
+            }
+          }
+
+          if (!retryable) {
+            break;
+          }
+
+          await new Promise((r) => setTimeout(r, 250 + attempt * 350));
+        }
       }
     }
 
-    if (!signature) {
-      // Common case: blockhash expired / not found -> client must re-sign with a fresh blockhash.
+    const lastMsg = lastErr instanceof Error ? lastErr.message : String(lastErr ?? "");
+    if (lastMsg.toLowerCase().includes("blockhash") && lastMsg.toLowerCase().includes("not found")) {
       return NextResponse.json(
         {
           error: "Blockhash not found. Please re-sign with a fresh blockhash.",
@@ -138,12 +153,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (confirm) {
-      await withTimeout(confirmSignatureViaRpc(connection, signature, finality), 20_000);
-      return NextResponse.json({ signature, confirmed: true }, { headers: { "Cache-Control": "no-store" } });
-    }
+    throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
 
-    return NextResponse.json({ signature, confirmed: false }, { headers: { "Cache-Control": "no-store" } });
   } catch (e) {
     const msg = getSafeErrorMessage(e);
     if (msg.toLowerCase().includes("blockhash not found")) {
