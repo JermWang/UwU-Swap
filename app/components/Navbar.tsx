@@ -86,7 +86,7 @@ export default function Navbar() {
             <span>Docs</span>
           </Link>
           <a 
-            href="https://twitter.com/uwuswap" 
+            href="https://x.com/uwuswap_" 
             target="_blank" 
             rel="noopener noreferrer"
             className="navbar-link"

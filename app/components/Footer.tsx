@@ -21,7 +21,7 @@ export default function Footer() {
             </div>
             <div className="swap-footer-section">
               <h4>Community</h4>
-              <a href="https://twitter.com" target="_blank" rel="noopener noreferrer">Twitter</a>
+              <a href="https://x.com/uwuswap_" target="_blank" rel="noopener noreferrer">Twitter</a>
               <a href="https://discord.com" target="_blank" rel="noopener noreferrer">Discord</a>
             </div>
             <div className="swap-footer-section">
