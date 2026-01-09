@@ -69,14 +69,16 @@ export async function resolveSolDomain(
       return null;
     }
 
-    // The owner pubkey is stored after the header (96 bytes offset for SNS v2)
-    // Header: 96 bytes, then the owner pubkey (32 bytes)
     const data = accountInfo.data;
     if (data.length < 96 + 32) {
       return null;
     }
 
-    const ownerBytes = data.slice(96, 96 + 32);
+    // NameRecordHeader layout (96 bytes total):
+    // - parentName: 0..32
+    // - owner: 32..64
+    // - class: 64..96
+    const ownerBytes = data.slice(32, 64);
     const owner = new PublicKey(ownerBytes);
     
     // Verify it's not the system program (empty/uninitialized)

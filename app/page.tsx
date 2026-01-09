@@ -568,14 +568,22 @@ Hold $UWU tokens for zero-fee transfers!`,
       startTransferPolling({ planId: planData.id, fundingSignature: signature });
 
     } catch (e) {
-      const error = e instanceof Error ? e.message : String(e);
+      const msg = e instanceof Error ? e.message : String(e);
+      const lower = msg.toLowerCase();
+
+      // Wallet adapter throws when user cancels/rejects the signing prompt.
+      if (lower.includes("user rejected") || lower.includes("rejected") || lower.includes("cancel")) {
+        addMessage("assistant", "No worries~ Signature request cancelled. You can try again when you're ready!");
+        return;
+      }
+
       addMessage(
         "assistant",
         generateRoutingUpdate({
           currentHop: 0,
           totalHops: 0,
           status: "failed",
-          error,
+          error: msg,
         })
       );
       setTransferModalData(null);
