@@ -5,7 +5,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
-import { Connection, PublicKey, Transaction } from "@solana/web3.js";
+import { PublicKey, Transaction } from "@solana/web3.js";
 
 import {
   parseUserMessage,
@@ -20,7 +20,15 @@ import {
   ParsedTransferCommand,
 } from "./lib/uwuChat";
 import TransferModal, { TransferModalData } from "./components/TransferModal";
-import { resolveAddressOrDomain, isSolDomain } from "./lib/solDomains";
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return window.btoa(binary);
+}
 
 type TransferState = {
   planId: string;
@@ -411,24 +419,7 @@ Hold $UWU tokens for zero-fee transfers!`,
     setIsProcessing(true);
 
     try {
-      // Resolve .sol domain if needed
-      const rpcUrl = process.env.NEXT_PUBLIC_SOLANA_RPC_URL || "https://api.mainnet-beta.solana.com";
-      const connection = new Connection(rpcUrl, "confirmed");
-      
-      let resolvedAddress = cmd.destination;
       const originalDestination = cmd.destination;
-      
-      if (isSolDomain(cmd.destination)) {
-        addMessage("assistant", `Resolving ${cmd.destination}...`);
-        const resolved = await resolveAddressOrDomain(cmd.destination, connection);
-        if (!resolved) {
-          addMessage("assistant", `❌ Could not resolve .sol domain: ${cmd.destination}`);
-          setIsProcessing(false);
-          return;
-        }
-        resolvedAddress = resolved.pubkey.toBase58();
-        addMessage("assistant", `✓ Resolved to \`${resolvedAddress.slice(0, 6)}...${resolvedAddress.slice(-4)}\``);
-      }
 
       // Create routing plan
       const planRes = await fetch("/api/transfer", {
@@ -436,7 +427,7 @@ Hold $UWU tokens for zero-fee transfers!`,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           fromWallet: publicKey.toBase58(),
-          toWallet: resolvedAddress,
+          toWallet: originalDestination,
           amountSol: cmd.amount,
           asset: cmd.asset === "SOL" ? null : cmd.asset,
         }),
@@ -456,7 +447,7 @@ Hold $UWU tokens for zero-fee transfers!`,
       setTransferModalData({
         amount: cmd.amount,
         destination: originalDestination,
-        resolvedAddress,
+        resolvedAddress: String(planData.resolvedToWallet ?? originalDestination),
         hopCount: planData.hopCount,
         estimatedTimeMs: planData.estimatedCompletionMs,
         feeApplied: planData.feeApplied,
@@ -486,9 +477,6 @@ Hold $UWU tokens for zero-fee transfers!`,
     setIsModalSigning(true);
 
     try {
-      const rpcUrl = process.env.NEXT_PUBLIC_SOLANA_RPC_URL || "https://api.mainnet-beta.solana.com";
-      const connection = new Connection(rpcUrl, "confirmed");
-
       // Check if user made changes - if so, create a new routing plan
       const amountChanged = editedAmount !== transferModalData.amount;
       const destChanged = editedDestination !== transferModalData.destination;
@@ -502,18 +490,6 @@ Hold $UWU tokens for zero-fee transfers!`,
 
       if (amountChanged || destChanged) {
         addMessage("assistant", "Creating new routing plan with your changes...");
-        
-        // Resolve .sol domain if needed
-        let resolvedAddress = editedDestination;
-        if (isSolDomain(editedDestination)) {
-          const resolved = await resolveAddressOrDomain(editedDestination, connection);
-          if (!resolved) {
-            addMessage("assistant", `❌ Could not resolve .sol domain: ${editedDestination}`);
-            setIsModalSigning(false);
-            return;
-          }
-          resolvedAddress = resolved.pubkey.toBase58();
-        }
 
         // Create new routing plan
         const planRes = await fetch("/api/transfer", {
@@ -521,7 +497,7 @@ Hold $UWU tokens for zero-fee transfers!`,
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             fromWallet: publicKey.toBase58(),
-            toWallet: resolvedAddress,
+            toWallet: editedDestination,
             amountSol: editedAmount,
             asset: null,
           }),
@@ -542,11 +518,15 @@ Hold $UWU tokens for zero-fee transfers!`,
         };
       }
 
-      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
+      const blockhashRes = await fetch("/api/solana/blockhash", { cache: "no-store" });
+      const bh = await blockhashRes.json().catch(() => null);
+      if (!blockhashRes.ok || !bh?.blockhash || typeof bh?.lastValidBlockHeight !== "number") {
+        throw new Error(typeof bh?.error === "string" ? bh.error : "Failed to fetch latest blockhash");
+      }
 
       const tx = new Transaction();
-      tx.recentBlockhash = blockhash;
-      tx.lastValidBlockHeight = lastValidBlockHeight;
+      tx.recentBlockhash = String(bh.blockhash);
+      tx.lastValidBlockHeight = Number(bh.lastValidBlockHeight);
       tx.feePayer = publicKey;
 
       const { SystemProgram } = await import("@solana/web3.js");
@@ -559,8 +539,18 @@ Hold $UWU tokens for zero-fee transfers!`,
       );
 
       const signedTx = await signTransaction(tx);
-      const signature = await connection.sendRawTransaction(signedTx.serialize());
-      await connection.confirmTransaction({ signature, blockhash, lastValidBlockHeight }, "confirmed");
+
+      const sendRes = await fetch("/api/solana/send-raw-transaction", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ txBase64: bytesToBase64(signedTx.serialize()) }),
+        cache: "no-store",
+      });
+      const sent = await sendRes.json().catch(() => null);
+      if (!sendRes.ok || !sent?.signature) {
+        throw new Error(typeof sent?.error === "string" ? sent.error : "Failed to broadcast transaction");
+      }
+      const signature = String(sent.signature);
 
       // Close modal and update state
       setTransferModalData(null);

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { PublicKey } from "@solana/web3.js";
 
 import { getConnection } from "../../lib/rpc";
+import { resolveAddressOrDomain } from "../../lib/solDomains";
 import { TransferAsset } from "../../lib/uwuRouter";
 import { solToLamports } from "../../lib/uwuChat";
 import { getSafeErrorMessage } from "../../lib/safeError";
@@ -26,15 +27,20 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid amountSol" }, { status: 400 });
     }
 
-    // Validate wallet addresses
+    const connection = getConnection();
+
+    // Validate fromWallet and resolve destination (supports .sol domains)
     try {
       new PublicKey(fromWallet);
-      new PublicKey(toWallet);
     } catch {
-      return NextResponse.json({ error: "Invalid wallet address" }, { status: 400 });
+      return NextResponse.json({ error: "Invalid fromWallet" }, { status: 400 });
     }
 
-    const connection = getConnection();
+    const resolved = await resolveAddressOrDomain(toWallet, connection);
+    if (!resolved) {
+      return NextResponse.json({ error: "Invalid toWallet" }, { status: 400 });
+    }
+
     const transferAsset: TransferAsset = asset?.mint ? { mint: asset.mint } : "SOL";
     const amountLamports = solToLamports(amountSol);
 
@@ -42,7 +48,7 @@ export async function POST(req: NextRequest) {
     const data = await createPrivyRoutingPlan({
       connection,
       fromWallet,
-      toWallet,
+      toWallet: resolved.pubkey.toBase58(),
       asset: transferAsset,
       amountLamports,
     });
@@ -62,6 +68,7 @@ export async function POST(req: NextRequest) {
       feeApplied: data.plan.feeApplied,
       feeLamports: data.plan.feeLamports,
       firstBurnerPubkey: data.plan.burners[0]?.address,
+      resolvedToWallet: resolved.pubkey.toBase58(),
     });
   } catch (e) {
     console.error("Transfer plan error:", e);
