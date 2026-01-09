@@ -229,7 +229,10 @@ export async function POST(req: NextRequest) {
       if (!burner0?.address) return NextResponse.json({ error: "Missing routing account" }, { status: 500 });
 
       const sig = fundingSignature || state.fundingSignature;
-      if (sig && !state.fundingSignature) {
+      const now = Date.now();
+      const shouldPersistSig = !!sig && (!state.fundingSignature || state.fundingSignature !== sig);
+      const shouldPersistSigSetAt = !!sig && !state.fundingSignatureSetAtUnixMs;
+      if (shouldPersistSig || shouldPersistSigSetAt) {
         await mutateUwuTransfer<UwuPrivyTransferData>({
           id,
           mutate: (r) => ({
@@ -238,8 +241,8 @@ export async function POST(req: NextRequest) {
               ...r.data,
               state: {
                 ...r.data.state,
-                fundingSignature: sig,
-                fundingSignatureSetAtUnixMs: Date.now(),
+                fundingSignature: sig || r.data.state.fundingSignature,
+                fundingSignatureSetAtUnixMs: r.data.state.fundingSignatureSetAtUnixMs || (sig ? now : undefined),
               },
             },
           }),
@@ -248,9 +251,12 @@ export async function POST(req: NextRequest) {
 
       const burner0Pubkey = new PublicKey(burner0.address);
 
+      let sigStatus: any = null;
+
       if (sig) {
         const st = await withAnyConnection((c) => c.getSignatureStatuses([sig], { searchTransactionHistory: true }));
         const s: any = st?.value?.[0];
+        sigStatus = s || null;
         if (s?.err) {
           await mutateUwuTransfer<UwuPrivyTransferData>({
             id,
@@ -265,7 +271,7 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ ok: true, id, status: "failed" });
         }
 
-        const setAt = Number(state.fundingSignatureSetAtUnixMs || 0);
+        const setAt = Number(state.fundingSignatureSetAtUnixMs || (shouldPersistSigSetAt ? now : 0) || 0);
         if (!s && setAt && Date.now() - setAt > 90_000) {
           await mutateUwuTransfer<UwuPrivyTransferData>({
             id,
@@ -283,21 +289,48 @@ export async function POST(req: NextRequest) {
 
       let funded = false;
       if (plan.asset === "SOL") {
-        const balConfirmed = await withAnyConnection((c) => c.getBalance(burner0Pubkey, "confirmed"));
-        funded = BigInt(balConfirmed) >= amountLamports;
+        let balanceLamports = await withAnyConnection((c) => c.getBalance(burner0Pubkey, "confirmed"));
+        let balanceCommitment: "confirmed" | "processed" = "confirmed";
+        funded = BigInt(balanceLamports) >= amountLamports;
         if (!funded) {
-          const balProcessed = await withAnyConnection((c) => c.getBalance(burner0Pubkey, "processed"));
-          funded = BigInt(balProcessed) >= amountLamports;
+          balanceLamports = await withAnyConnection((c) => c.getBalance(burner0Pubkey, "processed"));
+          balanceCommitment = "processed";
+          funded = BigInt(balanceLamports) >= amountLamports;
+        }
+
+        if (!funded) {
+          return NextResponse.json({
+            ok: true,
+            id,
+            status: "awaiting_funding",
+            funded: false,
+            fundingSignature: sig,
+            signatureStatus: sigStatus ? { confirmationStatus: sigStatus.confirmationStatus, err: sigStatus.err } : null,
+            balanceLamports,
+            balanceCommitment,
+            requiredLamports: amountLamports.toString(),
+          });
         }
       } else {
         const mint = new PublicKey((plan.asset as any).mint);
         const bal = await withAnyConnection((c) => getTokenBalanceForMint({ connection: c, owner: burner0Pubkey, mint }));
         funded = bal.amountRaw >= amountLamports;
+
+        if (!funded) {
+          return NextResponse.json({
+            ok: true,
+            id,
+            status: "awaiting_funding",
+            funded: false,
+            fundingSignature: sig,
+            signatureStatus: sigStatus ? { confirmationStatus: sigStatus.confirmationStatus, err: sigStatus.err } : null,
+            tokenBalanceRaw: bal.amountRaw.toString(),
+            requiredRaw: amountLamports.toString(),
+          });
+        }
       }
 
-      if (!funded) {
-        return NextResponse.json({ ok: true, id, status: "awaiting_funding", funded: false });
-      }
+      if (!funded) return NextResponse.json({ ok: true, id, status: "awaiting_funding", funded: false, fundingSignature: sig });
 
       const nextStatus = "routing" as const;
       const nextActionAt = Date.now() + Number(plan.hopDelaysMs?.[0] ?? 0);
