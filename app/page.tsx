@@ -87,7 +87,7 @@ Privacy-first token transfers on Solana, nya~
 - "help" - view all commands
 
 Hold $UWU tokens for zero-fee transfers!`,
-      timestamp: Date.now(),
+      timestamp: 0, // Use 0 for initial message to avoid hydration mismatch
     },
   ]);
   const [inputValue, setInputValue] = useState("");
@@ -752,7 +752,7 @@ Hold $UWU tokens for zero-fee transfers!`,
                   <div className="swap-message-text">
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
                   </div>
-                  <div className="swap-message-time">{formatTime(msg.timestamp)}</div>
+                  <div className="swap-message-time" suppressHydrationWarning>{formatTime(msg.timestamp)}</div>
                 </div>
               </div>
             ))}
@@ -1002,6 +1002,7 @@ Hold $UWU tokens for zero-fee transfers!`,
 }
 
 function formatTime(ts: number): string {
+  if (ts === 0) return ""; // Hide time for initial message
   const d = new Date(ts);
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
