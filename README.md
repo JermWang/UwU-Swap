@@ -6,7 +6,7 @@ Privacy-first token transfers on Solana. Send tokens through ephemeral wallet ch
 
 - **Private Transfers**: Route tokens through randomized burner wallet chains
 - **AI Chat Interface**: Natural language commands like "send 2 SOL privately to [address]"
-- **$SHIP Token Benefits**: Hold $SHIP to waive transfer fees
+- **$UWU Token Benefits**: Hold $UWU to waive transfer fees (configure `UWU_TOKEN_MINT`)
 - **Randomized Routing**: Variable hop counts, timing delays, and wallet structures
 
 ## Getting Started
@@ -34,10 +34,14 @@ cp .env.example .env.local
 Required variables:
 - `SOLANA_RPC_URL` - Your Solana RPC endpoint
 - `NEXT_PUBLIC_SOLANA_RPC_URL` - Client-side RPC URL
-- `SHIP_TOKEN_MINT` - $SHIP token mint address
+- `SUPABASE_URL` - Supabase project URL (for persisted routing plans)
+- `SUPABASE_SERVICE_ROLE_KEY` - Supabase service role key
+- `UWU_TOKEN_MINT` - $UWU token mint address (holders can have fees waived)
 - `UWU_TREASURY_WALLET` - Treasury wallet for fees
 - `PRIVY_APP_ID` - Privy app ID (for managed wallets)
 - `PRIVY_APP_SECRET` - Privy app secret
+- `ESCROW_FEE_PAYER_SECRET_KEY` - Fee payer for routing hop transactions
+- `OPENAI_API_KEY` - (optional) for conversational Nana chat
 
 ### Development
 
@@ -59,9 +63,12 @@ npm start
 ```
 app/
 ├── api/
-│   ├── balance/        # Wallet balance + $SHIP check
+│   ├── balance/        # Wallet balance + $UWU check
+│   ├── chat/           # Conversational assistant (LLM-backed)
 │   ├── transfer/       # Create routing plans
-│   │   └── execute/    # Execute hop chain
+│   │   ├── status/     # Poll transfer status
+│   │   ├── step/       # Advance routing execution (server-side)
+│   │   └── execute/    # Deprecated (returns 410)
 │   └── health/         # Health check
 ├── components/
 │   ├── SolanaWalletProvider.tsx
@@ -89,7 +96,7 @@ app/
 
 | Holder Status | Fee |
 |--------------|-----|
-| $SHIP Holder | FREE |
+| $UWU Holder | FREE |
 | Non-holder | 0.5% |
 
 ## Security Notes

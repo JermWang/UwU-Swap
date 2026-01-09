@@ -750,6 +750,62 @@ export async function findRecentSystemTransferSignature(input: {
   return null;
 }
 
+export async function findRecentSplTransferSignature(input: {
+  connection: Connection;
+  fromOwner: PublicKey;
+  toOwner: PublicKey;
+  mint: PublicKey;
+  amountRaw: bigint;
+  limit?: number;
+}): Promise<string | null> {
+  const { connection, fromOwner, toOwner, mint } = input;
+  const amountRaw = BigInt(input.amountRaw);
+  if (amountRaw <= 0n) return null;
+
+  const limit = Math.max(1, Math.min(50, Number(input.limit ?? 20) || 20));
+  const c = getServerCommitment();
+  const finality: Finality = c === "finalized" ? "finalized" : "confirmed";
+
+  const tokenProgram = await getTokenProgramIdForMint({ connection, mint });
+  const sourceAta = getAssociatedTokenAddress({ owner: fromOwner, mint, tokenProgram });
+  const destinationAta = getAssociatedTokenAddress({ owner: toOwner, mint, tokenProgram });
+
+  const sigs = await withRetry(() => connection.getSignaturesForAddress(sourceAta, { limit }, finality));
+  for (const s of sigs) {
+    const sig = String(s.signature ?? "").trim();
+    if (!sig) continue;
+
+    const tx = await withRetry(() => connection.getParsedTransaction(sig, { maxSupportedTransactionVersion: 0, commitment: finality }));
+    const ixs: any[] = (tx as any)?.transaction?.message?.instructions ?? [];
+    for (const ix of ixs) {
+      const program = String(ix?.program ?? "").toLowerCase();
+      const parsed = ix?.parsed;
+      const info = parsed?.info;
+      if (!program.includes("token")) continue;
+
+      const t = String(parsed?.type ?? "");
+      if (t !== "transfer" && t !== "transferChecked") continue;
+
+      const src = String(info?.source ?? "");
+      const dst = String(info?.destination ?? "");
+      if (src !== sourceAta.toBase58() || dst !== destinationAta.toBase58()) continue;
+
+      const amtStr =
+        (typeof info?.amount === "string" ? info.amount : "") ||
+        (typeof info?.tokenAmount?.amount === "string" ? info.tokenAmount.amount : "");
+      if (!amtStr) continue;
+
+      try {
+        if (BigInt(amtStr) === amountRaw) return sig;
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  return null;
+}
+
 export async function transferAllLamportsFromPrivyWallet(opts: {
   connection: Connection;
   walletId: string;

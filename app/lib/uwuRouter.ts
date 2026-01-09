@@ -15,7 +15,7 @@ import {
 // Configuration
 // ============================================================================
 
-const FEE_BPS = 50; // 0.5% fee for non-$SHIP holders
+export const FEE_BPS = 50; // 0.5% fee for non-$UWU holders
 const MIN_HOPS = 2;
 const MAX_HOPS = 5;
 const MIN_HOP_DELAY_MS = 500;
@@ -25,9 +25,9 @@ const MAX_HOP_DELAY_MS = 3000;
 let _shipTokenMint: PublicKey | null = null;
 let _treasuryWallet: PublicKey | null = null;
 
-function getUwuTokenMint(): PublicKey | null {
+export function getUwuTokenMint(): PublicKey | null {
   if (_shipTokenMint) return _shipTokenMint;
-  const raw = process.env.UWU_TOKEN_MINT?.trim();
+  const raw = (process.env.UWU_TOKEN_MINT?.trim() || process.env.SHIP_TOKEN_MINT?.trim()) ?? "";
   if (!raw) return null;
   try {
     _shipTokenMint = new PublicKey(raw);
@@ -37,7 +37,7 @@ function getUwuTokenMint(): PublicKey | null {
   }
 }
 
-function getTreasuryWallet(): PublicKey | null {
+export function getTreasuryWallet(): PublicKey | null {
   if (_treasuryWallet) return _treasuryWallet;
   const raw = process.env.UWU_TREASURY_WALLET?.trim();
   if (!raw) return null;
@@ -493,5 +493,3 @@ export function deserializeRoutingPlan(data: SerializedRoutingPlan): RoutingPlan
 // ============================================================================
 // Utility Exports
 // ============================================================================
-
-export { getUwuTokenMint, getTreasuryWallet, FEE_BPS };

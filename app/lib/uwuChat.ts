@@ -19,10 +19,6 @@ export type ParsedCommand =
   | { type: "balance"; raw: string }
   | { type: "unknown"; raw: string };
 
-const SOL_AMOUNT_REGEX = /(\d+(?:\.\d+)?)\s*(?:sol|SOL|◎)/i;
-const WALLET_REGEX = /([1-9A-HJ-NP-Za-km-z]{32,44})/;
-const SEND_KEYWORDS = ["send", "transfer", "move", "pay", "give"];
-
 export function parseUserMessage(message: string): ParsedCommand {
   const raw = message.trim();
   const lower = raw.toLowerCase();
@@ -42,38 +38,6 @@ export function parseUserMessage(message: string): ParsedCommand {
   // Balance command
   if (lower === "balance" || lower === "/balance" || lower.includes("my balance") || lower.includes("check balance")) {
     return { type: "balance", raw };
-  }
-
-  // Transfer command detection
-  const hasSendKeyword = SEND_KEYWORDS.some((kw) => lower.includes(kw));
-  const solMatch = raw.match(SOL_AMOUNT_REGEX);
-  const walletMatch = raw.match(WALLET_REGEX);
-
-  if (hasSendKeyword && solMatch && walletMatch) {
-    const amount = parseFloat(solMatch[1]);
-    const destination = walletMatch[1];
-
-    return {
-      type: "transfer",
-      amount,
-      asset: "SOL",
-      destination,
-      raw,
-    };
-  }
-
-  // Check for "privately" or "private" to confirm intent
-  if ((lower.includes("private") || lower.includes("uwu")) && solMatch && walletMatch) {
-    const amount = parseFloat(solMatch[1]);
-    const destination = walletMatch[1];
-
-    return {
-      type: "transfer",
-      amount,
-      asset: "SOL",
-      destination,
-      raw,
-    };
   }
 
   return { type: "unknown", raw };

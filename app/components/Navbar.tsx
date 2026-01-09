@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import dynamic from "next/dynamic";
 
-const CONTRACT_ADDRESS: string = ""; // Coming soon - add contract address here when available
+const CONTRACT_ADDRESS: string = String(process.env.NEXT_PUBLIC_TOKEN_CONTRACT_ADDRESS ?? "").trim();
 
 const WalletMultiButton = dynamic(
   () => import("@solana/wallet-adapter-react-ui").then((mod) => mod.WalletMultiButton),
@@ -39,35 +39,38 @@ export default function Navbar() {
   return (
     <nav className="navbar">
       <div className="navbar-inner">
-        {/* Logo */}
-        <Link href="/" className="navbar-brand">
-          <img 
-            src="/branding/AI_assistant_avatar.png" 
-            alt="Uwu Swap" 
-            className="navbar-logo-img"
-          />
-        </Link>
+        {/* Left Section - Logo + Contract */}
+        <div className="navbar-left">
+          <Link href="/" className="navbar-brand">
+            <img 
+              src="/branding/AI_assistant_avatar.png" 
+              alt="Uwu Swap" 
+              className="navbar-logo-img"
+            />
+          </Link>
 
-        {/* Contract Address Button */}
-        <button 
-          className="navbar-contract-btn"
-          onClick={handleCopyContract}
-          disabled={!CONTRACT_ADDRESS}
-          title={CONTRACT_ADDRESS || "Contract address coming soon"}
-        >
-          <span className="navbar-contract-label">$UWU</span>
-          <span className="navbar-contract-address">
-            {CONTRACT_ADDRESS ? `${CONTRACT_ADDRESS.slice(0, 4)}...${CONTRACT_ADDRESS.slice(-4)}` : "Coming Soon"}
-          </span>
-          {CONTRACT_ADDRESS && (
-            <span className="navbar-contract-copy">
-              {copied ? <CheckIcon /> : <CopyIcon />}
+          {/* Contract Address Button */}
+          <button 
+            className="navbar-contract-btn"
+            onClick={handleCopyContract}
+            disabled={!CONTRACT_ADDRESS}
+            title={CONTRACT_ADDRESS || "Contract address coming soon"}
+          >
+            <span className="navbar-contract-label">$UWU</span>
+            <span className="navbar-contract-address">
+              {CONTRACT_ADDRESS ? `${CONTRACT_ADDRESS.slice(0, 4)}...${CONTRACT_ADDRESS.slice(-4)}` : "Coming Soon"}
             </span>
-          )}
-        </button>
+            {CONTRACT_ADDRESS && (
+              <span className="navbar-contract-copy">
+                {copied ? <CheckIcon /> : <CopyIcon />}
+              </span>
+            )}
+          </button>
+        </div>
 
-        {/* Navigation Links */}
-        <div className="navbar-links">
+        {/* Center Section - Navigation Links */}
+        <div className="navbar-center">
+          <div className="navbar-links">
           <Link 
             href="/" 
             className={`navbar-link ${isActive("/") ? "navbar-link--active" : ""}`}
@@ -91,10 +94,11 @@ export default function Navbar() {
             <XIcon />
             <span className="sr-only">Twitter</span>
           </a>
+          </div>
         </div>
 
-        {/* Wallet Button - Only render on client to avoid hydration mismatch */}
-        <div className="navbar-wallet">
+        {/* Right Section - Wallet Button */}
+        <div className="navbar-right">
           {mounted && <WalletMultiButton />}
         </div>
       </div>

@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { PublicKey } from "@solana/web3.js";
 
 import { getConnection } from "../../lib/rpc";
-import {
-  createRoutingPlan,
-  serializeRoutingPlan,
-  TransferAsset,
-} from "../../lib/uwuRouter";
+import { TransferAsset } from "../../lib/uwuRouter";
 import { solToLamports } from "../../lib/uwuChat";
+import { getSafeErrorMessage } from "../../lib/safeError";
+import { createUwuTransfer } from "../../lib/uwuTransferStore";
+import { createPrivyRoutingPlan, UwuPrivyTransferData } from "../../lib/uwuPrivyRouter";
+
+export const runtime = "nodejs";
 
 export async function POST(req: NextRequest) {
   try {
@@ -37,8 +38,8 @@ export async function POST(req: NextRequest) {
     const transferAsset: TransferAsset = asset?.mint ? { mint: asset.mint } : "SOL";
     const amountLamports = solToLamports(amountSol);
 
-    // Create routing plan
-    const plan = await createRoutingPlan({
+    // Create a Privy-managed routing plan (burner keys never leave Privy)
+    const data = await createPrivyRoutingPlan({
       connection,
       fromWallet,
       toWallet,
@@ -46,26 +47,24 @@ export async function POST(req: NextRequest) {
       amountLamports,
     });
 
-    // Serialize for client
-    const serialized = serializeRoutingPlan(plan);
+    // Persist plan + state server-side
+    await createUwuTransfer<UwuPrivyTransferData>({
+      id: data.plan.id,
+      status: "awaiting_funding",
+      data,
+    });
 
-    // Return plan details (excluding secrets for now - those stay server-side)
+    // Return public details only
     return NextResponse.json({
-      id: plan.id,
-      hopCount: plan.hops.length,
-      estimatedCompletionMs: plan.estimatedCompletionMs,
-      feeApplied: plan.feeApplied,
-      feeLamports: plan.feeLamports.toString(),
-      firstBurnerPubkey: plan.burnerWallets[0].publicKey.toBase58(),
-      // Store serialized plan server-side in production (DB/Redis)
-      // For now, return encrypted or keep in memory
-      _debug: {
-        burnerCount: plan.burnerWallets.length,
-      },
+      id: data.plan.id,
+      hopCount: data.plan.hopCount,
+      estimatedCompletionMs: data.plan.estimatedCompletionMs,
+      feeApplied: data.plan.feeApplied,
+      feeLamports: data.plan.feeLamports,
+      firstBurnerPubkey: data.plan.burners[0]?.address,
     });
   } catch (e) {
     console.error("Transfer plan error:", e);
-    const message = e instanceof Error ? e.message : "Unknown error";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: getSafeErrorMessage(e) }, { status: 500 });
   }
 }

@@ -89,6 +89,26 @@ body {
   padding: 0 24px;
 }
 
+.navbar-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex: 1;
+}
+
+.navbar-center {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.navbar-right {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex: 1;
+}
+
 .navbar-brand {
   display: flex;
   align-items: center;
@@ -156,10 +176,6 @@ body {
   opacity: 1;
 }
 
-.navbar-wallet {
-  display: flex;
-  align-items: center;
-}
 
 /* Contract Address Button - Glassmorphic */
 .navbar-contract-btn {
@@ -1562,8 +1578,19 @@ body {
 }
 
 .docs-guarantee-icon {
-  font-size: 28px;
-  margin-bottom: 8px;
+  width: 34px;
+  height: 34px;
+  margin: 0 auto 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-primary);
+  opacity: 0.95;
+}
+
+.docs-guarantee-icon svg {
+  width: 22px;
+  height: 22px;
 }
 
 .docs-guarantee h4 {

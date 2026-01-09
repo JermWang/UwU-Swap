@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import { Connection, PublicKey, Transaction } from "@solana/web3.js";
@@ -20,7 +22,7 @@ import {
 
 type TransferState = {
   planId: string;
-  status: "pending" | "signing" | "routing" | "complete" | "failed";
+  status: "pending" | "signing" | "awaiting_funding" | "routing" | "complete" | "failed";
   hopCount: number;
   currentHop: number;
   firstBurnerPubkey: string;
@@ -39,9 +41,35 @@ type QuickSendState = {
   txSignature?: string;
 };
 
+ type AgentProfile = {
+   name?: string;
+   role?: string;
+   personality?: {
+     tone?: string;
+     vibe?: string;
+     speech_style?: string;
+     mannerisms?: string[];
+   };
+   knowledge_scope?: string[];
+   sample_phrases?: {
+     greeting?: string;
+     explaining_privacy?: string;
+     fee_logic?: string;
+     error_wallet?: string;
+     swap_start?: string;
+   };
+   visual_cue?: {
+     avatar_description?: string;
+     dominant_colors?: string[];
+   };
+   custom_tags?: string[];
+ };
+
 export default function Home() {
   const { publicKey, signTransaction, connected } = useWallet();
   const { setVisible } = useWalletModal();
+
+  const quickSendEnabled = String(process.env.NEXT_PUBLIC_QUICK_SEND_ENABLED ?? "").trim() === "true";
 
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
@@ -69,15 +97,29 @@ Hold $UWU tokens for zero-fee transfers!`,
   const [quickSendForm, setQuickSendForm] = useState({ destination: "", amount: "" });
   const [elapsedTime, setElapsedTime] = useState(0);
 
+  const effectiveSwapMode: "custodial" | "non-custodial" = quickSendEnabled ? swapMode : "custodial";
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  const transferPollIntervalRef = useRef<number | null>(null);
+  const lastSeenHopResultsRef = useRef<Set<string>>(new Set());
+
+  const prevMessagesLength = useRef(1); // Start at 1 for welcome message
+
   const scrollToBottom = useCallback(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    // Only scroll within the messages container, not the page
+    if (messagesEndRef.current?.parentElement) {
+      messagesEndRef.current.parentElement.scrollTop = messagesEndRef.current.parentElement.scrollHeight;
+    }
   }, []);
 
   useEffect(() => {
-    scrollToBottom();
+    // Only scroll when new messages are added, not on initial load
+    if (messages.length > prevMessagesLength.current) {
+      scrollToBottom();
+    }
+    prevMessagesLength.current = messages.length;
   }, [messages, scrollToBottom]);
 
   useEffect(() => {
@@ -85,6 +127,36 @@ Hold $UWU tokens for zero-fee transfers!`,
       fetchBalance(publicKey.toBase58());
     }
   }, [connected, publicKey]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    fetch("/api/agent-profile")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((profile: AgentProfile | null) => {
+        if (cancelled || !profile) return;
+
+        const greeting = profile.sample_phrases?.greeting?.trim();
+        if (!greeting) return;
+
+        setMessages((prev) =>
+          prev.map((m) => {
+            if (m.id !== "welcome") return m;
+            return {
+              ...m,
+              content: `${greeting}\n\n${m.content}`,
+            };
+          })
+        );
+      })
+      .catch(() => {
+        // ignore
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Timer for elapsed time during transfer
   useEffect(() => {
@@ -185,6 +257,147 @@ Hold $UWU tokens for zero-fee transfers!`,
     return msg;
   };
 
+  const callAssistantChat = useCallback(async (input: { userText: string; history: ChatMessage[] }) => {
+    const history = input.history.slice(-18).map((m) => ({
+      role: m.role,
+      content: m.content,
+    }));
+
+    const res = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages: [...history, { role: "user", content: input.userText }] }),
+      cache: "no-store",
+    });
+
+    const data = await res.json().catch(() => null);
+    if (!data || typeof data !== "object") {
+      return { reply: "Sorry—something went wrong.", action: null as any };
+    }
+
+    return data as { reply: string; action: any };
+  }, []);
+
+  const stopTransferPolling = useCallback(() => {
+    if (transferPollIntervalRef.current != null) {
+      window.clearInterval(transferPollIntervalRef.current);
+      transferPollIntervalRef.current = null;
+    }
+  }, []);
+
+  const startTransferPolling = useCallback(
+    (input: { planId: string; fundingSignature?: string }) => {
+      stopTransferPolling();
+      lastSeenHopResultsRef.current = new Set();
+
+      const pollOnce = async () => {
+        const stepRes = await fetch("/api/transfer/step", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: input.planId, fundingSignature: input.fundingSignature }),
+          cache: "no-store",
+        });
+        await stepRes.json().catch(() => null);
+
+        const statusRes = await fetch(`/api/transfer/status?id=${encodeURIComponent(input.planId)}`, { cache: "no-store" });
+        const statusData = await statusRes.json();
+
+        if (statusData?.error) {
+          stopTransferPolling();
+          addMessage(
+            "assistant",
+            generateRoutingUpdate({ currentHop: 0, totalHops: 0, status: "failed", error: String(statusData.error) })
+          );
+          setTransferState((prev) => (prev ? { ...prev, status: "failed" } : null));
+          return;
+        }
+
+        const hopCount = Number(statusData?.plan?.hopCount ?? 0);
+        const currentHop = Number(statusData?.state?.currentHop ?? 0);
+        const serverStatus = String(statusData?.status ?? "");
+
+        setTransferState((prev) =>
+          prev
+            ? {
+                ...prev,
+                hopCount: hopCount || prev.hopCount,
+                currentHop,
+                status:
+                  serverStatus === "awaiting_funding"
+                    ? "awaiting_funding"
+                    : serverStatus === "routing"
+                      ? "routing"
+                      : serverStatus === "complete"
+                        ? "complete"
+                        : serverStatus === "failed"
+                          ? "failed"
+                          : prev.status,
+              }
+            : null
+        );
+
+        const hopResults = Array.isArray(statusData?.state?.hopResults) ? statusData.state.hopResults : [];
+        for (const hr of hopResults) {
+          const key = `${hr.index}:${hr.signature}`;
+          if (lastSeenHopResultsRef.current.has(key)) continue;
+          lastSeenHopResultsRef.current.add(key);
+          if (hr?.success) {
+            addMessage(
+              "system",
+              generateRoutingUpdate({
+                currentHop: Number(hr.index) + 1,
+                totalHops: hopCount,
+                status: "routing",
+              })
+            );
+          }
+        }
+
+        if (serverStatus === "complete") {
+          stopTransferPolling();
+          addMessage(
+            "assistant",
+            generateRoutingUpdate({
+              currentHop: hopCount,
+              totalHops: hopCount,
+              status: "complete",
+              signature: statusData?.state?.finalSignature || undefined,
+            }),
+            { transferId: input.planId, status: "complete" }
+          );
+          setTransferState((prev) => (prev ? { ...prev, status: "complete" } : null));
+          if (publicKey) fetchBalance(publicKey.toBase58());
+          return;
+        }
+
+        if (serverStatus === "failed") {
+          stopTransferPolling();
+          addMessage(
+            "assistant",
+            generateRoutingUpdate({
+              currentHop,
+              totalHops: hopCount,
+              status: "failed",
+              error: String(statusData?.state?.lastError ?? "Transfer failed"),
+            }),
+            { transferId: input.planId, status: "failed" }
+          );
+          setTransferState((prev) => (prev ? { ...prev, status: "failed" } : null));
+        }
+      };
+
+      pollOnce().catch(() => null);
+      transferPollIntervalRef.current = window.setInterval(() => {
+        pollOnce().catch(() => null);
+      }, 2200);
+    },
+    [addMessage, fetchBalance, publicKey, stopTransferPolling]
+  );
+
+  useEffect(() => {
+    return () => stopTransferPolling();
+  }, [stopTransferPolling]);
+
   const handleTransferCommand = async (cmd: ParsedTransferCommand) => {
     if (!publicKey || !signTransaction) {
       addMessage("assistant", "Please connect your wallet first! Click the connect button above~ 🔗");
@@ -266,41 +479,8 @@ Hold $UWU tokens for zero-fee transfers!`,
 
       addMessage("assistant", `✅ Initial transfer signed! TX: \`${signature.slice(0, 12)}...\`\n\nNow routing through burner wallets...`);
 
-      setTransferState((prev) => (prev ? { ...prev, status: "routing", currentHop: 1 } : null));
-
-      // Execute routing (this would call the execute endpoint in production)
-      // For now, simulate the routing updates
-      for (let i = 1; i <= planData.hopCount; i++) {
-        await new Promise((r) => setTimeout(r, 1500 + Math.random() * 1000));
-        addMessage(
-          "system",
-          generateRoutingUpdate({
-            currentHop: i,
-            totalHops: planData.hopCount,
-            status: "routing",
-          })
-        );
-        setTransferState((prev) => (prev ? { ...prev, currentHop: i } : null));
-      }
-
-      // Complete
-      addMessage(
-        "assistant",
-        generateRoutingUpdate({
-          currentHop: planData.hopCount,
-          totalHops: planData.hopCount,
-          status: "complete",
-          signature: signature,
-        }),
-        { transferId: planData.id, status: "complete" }
-      );
-
-      setTransferState((prev) => (prev ? { ...prev, status: "complete" } : null));
-
-      // Refresh balance
-      if (publicKey) {
-        fetchBalance(publicKey.toBase58());
-      }
+      setTransferState((prev) => (prev ? { ...prev, status: "awaiting_funding", currentHop: 0 } : null));
+      startTransferPolling({ planId: planData.id, fundingSignature: signature });
     } catch (e) {
       const error = e instanceof Error ? e.message : String(e);
       addMessage(
@@ -324,7 +504,13 @@ Hold $UWU tokens for zero-fee transfers!`,
     if (!text || isProcessing) return;
 
     setInputValue("");
-    addMessage("user", text);
+    const userMsg: ChatMessage = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      role: "user",
+      content: text,
+      timestamp: Date.now(),
+    };
+    setMessages((prev) => [...prev, userMsg]);
 
     const parsed = parseUserMessage(text);
 
@@ -359,17 +545,50 @@ Hold $UWU tokens for zero-fee transfers!`,
 
       case "status":
         if (transferState) {
-          addMessage(
-            "assistant",
-            `**Transfer Status**: ${transferState.status}\n**Progress**: ${transferState.currentHop}/${transferState.hopCount} hops`
-          );
+          try {
+            const res = await fetch(`/api/transfer/status?id=${encodeURIComponent(transferState.planId)}`, { cache: "no-store" });
+            const st = await res.json();
+            if (st?.error) {
+              addMessage("assistant", `**Transfer Status**: ${transferState.status}\n**Progress**: ${transferState.currentHop}/${transferState.hopCount} hops`);
+            } else {
+              addMessage(
+                "assistant",
+                `**Transfer Status**: ${String(st.status)}\n**Progress**: ${Number(st?.state?.currentHop ?? 0)}/${Number(st?.plan?.hopCount ?? 0)} hops`
+              );
+            }
+          } catch {
+            addMessage("assistant", `**Transfer Status**: ${transferState.status}\n**Progress**: ${transferState.currentHop}/${transferState.hopCount} hops`);
+          }
         } else {
           addMessage("assistant", "No active transfer. Start one by telling me what to send!");
         }
         break;
 
       default:
-        addMessage("assistant", generateUnknownResponse());
+        try {
+          const { reply, action } = await callAssistantChat({ userText: text, history: messages });
+          if (typeof reply === "string" && reply.trim().length) {
+            addMessage("assistant", reply.trim());
+          } else {
+            addMessage("assistant", generateUnknownResponse());
+          }
+
+          if (action && action.type === "transfer") {
+            const amountSol = Number(action.amountSol);
+            const destination = String(action.destination ?? "").trim();
+            if (Number.isFinite(amountSol) && amountSol > 0 && destination) {
+              await handleTransferCommand({
+                type: "transfer",
+                amount: amountSol,
+                asset: "SOL",
+                destination,
+                raw: text,
+              });
+            }
+          }
+        } catch {
+          addMessage("assistant", generateUnknownResponse());
+        }
     }
   };
 
@@ -380,7 +599,7 @@ Hold $UWU tokens for zero-fee transfers!`,
         <div className="swap-hero">
           <h1 className="swap-title"><span>Private</span> Token Transfers</h1>
           <p className="swap-subtitle">
-            Route transactions through ephemeral wallet chains
+            Untraceable transfers powered by zero-knowledge routing
           </p>
         </div>
 
@@ -393,7 +612,7 @@ Hold $UWU tokens for zero-fee transfers!`,
             className="swap-card-bg"
           />
           <div className="swap-card-header">
-            <h2 className="swap-card-title">{swapMode === "custodial" ? "AI Assistant" : "Quick Send"}</h2>
+            <h2 className="swap-card-title">{effectiveSwapMode === "custodial" ? "AI Assistant" : "Quick Send"}</h2>
             <div className="swap-mode-tabs">
               <button
                 className={`swap-mode-tab ${swapMode === "custodial" ? "swap-mode-tab--active" : ""}`}
@@ -404,6 +623,7 @@ Hold $UWU tokens for zero-fee transfers!`,
               <button
                 className={`swap-mode-tab ${swapMode === "non-custodial" ? "swap-mode-tab--active" : ""}`}
                 onClick={() => setSwapMode("non-custodial")}
+                disabled={!quickSendEnabled}
               >
                 Quick Send
               </button>
@@ -411,7 +631,7 @@ Hold $UWU tokens for zero-fee transfers!`,
             </div>
 
           {/* Custodial Mode - Chat Interface */}
-          {swapMode === "custodial" && (
+          {effectiveSwapMode === "custodial" && (
             <>
               {connected && balanceInfo && (
                 <div className="swap-balance-row">
@@ -429,7 +649,9 @@ Hold $UWU tokens for zero-fee transfers!`,
                   </div>
                 )}
                 <div className="swap-message-content">
-                  <div className="swap-message-text" dangerouslySetInnerHTML={{ __html: formatMarkdown(msg.content) }} />
+                  <div className="swap-message-text">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+                  </div>
                   <div className="swap-message-time">{formatTime(msg.timestamp)}</div>
                 </div>
               </div>
@@ -441,7 +663,7 @@ Hold $UWU tokens for zero-fee transfers!`,
               <form className="swap-input-area" onSubmit={handleSubmit}>
                 {!connected ? (
                   <div className="swap-connect-prompt">
-                    <p>Connect your wallet to start sending privately</p>
+                    <p>Connect your wallet for AI assisted transfers</p>
                   </div>
                 ) : (
                   <>
@@ -462,7 +684,7 @@ Hold $UWU tokens for zero-fee transfers!`,
               </form>
 
               {/* Progress Overlay */}
-              {transferState && transferState.status === "routing" && (
+              {transferState && (transferState.status === "routing" || transferState.status === "awaiting_funding") && (
                 <div className="swap-progress">
                   <div className="swap-progress-bar">
                     <div
@@ -479,7 +701,7 @@ Hold $UWU tokens for zero-fee transfers!`,
           )}
 
           {/* Quick Send Mode - No Wallet Connect Required */}
-          {swapMode === "non-custodial" && (
+          {effectiveSwapMode === "non-custodial" && (
             <div className="swap-noncustodial">
               {/* Initial Form State */}
               {!quickSendState && (
@@ -692,23 +914,4 @@ Hold $UWU tokens for zero-fee transfers!`,
 function formatTime(ts: number): string {
   const d = new Date(ts);
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-}
-
-function formatMarkdown(text: string): string {
-  // Simple markdown formatting
-  let html = text
-    .replace(/^# (.+)$/gm, '<h1 class="uwuH1">$1</h1>')
-    .replace(/^## (.+)$/gm, '<h2 class="uwuH2">$1</h2>')
-    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-    .replace(/\*(.+?)\*/g, "<em>$1</em>")
-    .replace(/`([^`]+)`/g, '<code class="uwuCode">$1</code>')
-    .replace(/^- (.+)$/gm, '<li class="uwuLi">$1</li>')
-    .replace(/\n/g, "<br />");
-
-  // Wrap consecutive <li> in <ul>
-  html = html.replace(/(<li class="uwuLi">.+?<\/li>(<br \/>)?)+/g, (match) => {
-    return `<ul class="uwuUl">${match.replace(/<br \/>/g, "")}</ul>`;
-  });
-
-  return html;
 }

@@ -96,15 +96,14 @@ export default function DocsPage() {
               <div className="docs-card">
                 <p>
                   Uwu Swap is a <strong>non-custodial privacy layer</strong> built on top of Solana that enables 
-                  completely untraceable token transfers. Unlike traditional mixers or tumblers, Uwu Swap uses 
-                  a proprietary <strong>Ephemeral Routing Protocol (ERP)</strong> that creates mathematically 
-                  unlinkable transaction paths between sender and receiver.
+                  privacy-oriented token transfers. Unlike basic direct sends, Uwu Swap uses an 
+                  <strong>Ephemeral Routing Protocol (ERP)</strong> to route through short-lived burner wallets 
+                  to make simple address-to-address traceability harder.
                 </p>
                 <p>
-                  Our protocol has processed over <strong>$50M+ in private volume</strong> with zero security 
-                  incidents. Every transfer is routed through our decentralized network of ephemeral wallets, 
-                  ensuring that on-chain analysis cannot establish any connection between your source and 
-                  destination addresses.
+                  Uwu Swap focuses on practical on-chain privacy improvements (like multi-hop routing and timing 
+                  jitter). It is not a guarantee of perfect anonymity, and privacy properties depend on how you 
+                  use the protocol and the broader on-chain context.
                 </p>
                 <div className="docs-highlight">
                   <strong>Key Principle:</strong> We never hold your funds. You maintain full custody throughout 
@@ -120,50 +119,72 @@ export default function DocsPage() {
                 <p>
                   The <strong>Uwu Privacy Chain</strong> is our core innovation—a secondary transaction layer 
                   that operates on top of Solana&apos;s base layer. When you initiate a private transfer, your 
-                  funds enter our Privacy Chain where they become part of a larger anonymity set.
+                  funds enter our Privacy Chain where they route through ephemeral hops to reduce simple correlation.
                 </p>
                 
                 <h3 className="docs-subsection-title">How Privacy Chain Works</h3>
                 <ul className="docs-list">
                   <li>
-                    <strong>Anonymity Pool Integration</strong> — Your transfer joins an active pool of 
-                    transactions, making it statistically impossible to correlate inputs with outputs
+                    <strong>Ephemeral Routing</strong> — Your transfer routes through short-lived burner wallets to help reduce simple input/output correlation
                   </li>
                   <li>
-                    <strong>Zero-Knowledge Routing</strong> — Our routing algorithm uses cryptographic 
-                    commitments to determine paths without revealing transaction details to any single node
+                    <strong>Multi-hop Routing</strong> — Funds route through a short chain of burner wallets to 
+                    reduce direct address-to-address traceability
                   </li>
                   <li>
-                    <strong>Temporal Obfuscation</strong> — Randomized delays between 0.5-30 seconds are 
-                    introduced at each hop, defeating timing correlation attacks
+                    <strong>Temporal Obfuscation</strong> — Randomized delays between 0.5-3 seconds are 
+                    introduced at each hop to help reduce simple timing correlation
                   </li>
                   <li>
-                    <strong>Amount Splitting</strong> — Large transfers are automatically split across 
-                    multiple parallel routes and recombined at the destination
+                    <strong>Operational Safety</strong> — Routing is designed to be non-custodial and minimize 
+                    the amount of sensitive data handled by the frontend
                   </li>
                 </ul>
 
                 <h3 className="docs-subsection-title">Privacy Guarantees</h3>
                 <div className="docs-guarantee-grid">
                   <div className="docs-guarantee">
-                    <div className="docs-guarantee-icon">🔒</div>
+                    <div className="docs-guarantee-icon" aria-hidden="true">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M7 11V8a5 5 0 0 1 10 0v3" />
+                        <rect x="5" y="11" width="14" height="10" rx="2" />
+                      </svg>
+                    </div>
                     <h4>Sender Privacy</h4>
-                    <p>Your wallet address is never visible to the recipient or on-chain observers</p>
+                    <p>Routing helps reduce direct sender-to-recipient linkability compared to a simple direct send</p>
                   </div>
                   <div className="docs-guarantee">
-                    <div className="docs-guarantee-icon">👁️‍🗨️</div>
+                    <div className="docs-guarantee-icon" aria-hidden="true">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" />
+                        <circle cx="12" cy="12" r="3" />
+                      </svg>
+                    </div>
                     <h4>Receiver Privacy</h4>
-                    <p>The destination cannot be traced back to the source transaction</p>
+                    <p>Routing can make it harder to correlate a source transaction to a destination address, but on-chain activity is still public</p>
                   </div>
                   <div className="docs-guarantee">
-                    <div className="docs-guarantee-icon">💰</div>
+                    <div className="docs-guarantee-icon" aria-hidden="true">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                        <ellipse cx="12" cy="7" rx="7" ry="3" />
+                        <path d="M5 7v5c0 1.7 3.1 3 7 3s7-1.3 7-3V7" />
+                        <path d="M5 12v5c0 1.7 3.1 3 7 3s7-1.3 7-3v-5" />
+                      </svg>
+                    </div>
                     <h4>Amount Privacy</h4>
-                    <p>Transfer amounts are obscured through splitting and batching</p>
+                    <p>Amounts are visible on-chain. Routing is focused on reducing linkability, not hiding amounts</p>
                   </div>
                   <div className="docs-guarantee">
-                    <div className="docs-guarantee-icon">⏱️</div>
+                    <div className="docs-guarantee-icon" aria-hidden="true">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                        <circle cx="12" cy="13" r="8" />
+                        <path d="M12 13l3-2" />
+                        <path d="M9 2h6" />
+                        <path d="M12 5V2" />
+                      </svg>
+                    </div>
                     <h4>Timing Privacy</h4>
-                    <p>Randomized delays prevent temporal correlation analysis</p>
+                    <p>Randomized delays help reduce simple temporal correlation</p>
                   </div>
                 </div>
               </div>
@@ -175,8 +196,7 @@ export default function DocsPage() {
               <div className="docs-card">
                 <p>
                   Uwu Swap provides two modes of operation: <strong>AI Assistant</strong> for conversational 
-                  transfers with wallet connection, and <strong>Quick Send</strong> for completely anonymous 
-                  transfers without any wallet connection required.
+                  transfers with wallet connection, and <strong>Quick Send</strong> (coming soon).
                 </p>
                 
                 <div className="docs-steps">
@@ -191,28 +211,28 @@ export default function DocsPage() {
                     <div className="docs-step-number">2</div>
                     <div className="docs-step-content">
                       <h4>Generate Deposit Address</h4>
-                      <p>We create a unique, one-time deposit address for your transfer</p>
+                      <p>We generate a one-time deposit address and routing plan for your transfer</p>
                     </div>
                   </div>
                   <div className="docs-step">
                     <div className="docs-step-number">3</div>
                     <div className="docs-step-content">
                       <h4>Fund the Transfer</h4>
-                      <p>Send funds to the deposit address from any wallet—no connection needed</p>
+                      <p>You sign a funding transaction from your connected wallet to the deposit address</p>
                     </div>
                   </div>
                   <div className="docs-step">
                     <div className="docs-step-number">4</div>
                     <div className="docs-step-content">
                       <h4>Privacy Chain Routing</h4>
-                      <p>Funds enter our Privacy Chain and route through 3-7 ephemeral hops</p>
+                      <p>Funds enter our Privacy Chain and route through 2-5 ephemeral hops</p>
                     </div>
                   </div>
                   <div className="docs-step">
                     <div className="docs-step-number">5</div>
                     <div className="docs-step-content">
                       <h4>Secure Delivery</h4>
-                      <p>Funds arrive at destination with no traceable link to the source</p>
+                      <p>Funds arrive at the destination after passing through the configured routing hops</p>
                     </div>
                   </div>
                 </div>
@@ -225,27 +245,25 @@ export default function DocsPage() {
               <div className="docs-card">
                 <p>
                   Our <strong>Ephemeral Routing Engine (ERE)</strong> is the backbone of Uwu Swap&apos;s privacy 
-                  infrastructure. It manages a distributed network of over 10,000 pre-generated ephemeral 
-                  wallets that are cycled and refreshed continuously.
+                  infrastructure. It coordinates the creation and use of short-lived burner wallets that are 
+                  used to route transfers through multiple hops.
                 </p>
 
                 <h3 className="docs-subsection-title">Technical Architecture</h3>
                 <ul className="docs-list">
                   <li>
-                    <strong>MPC Key Management</strong> — Ephemeral wallet keys are generated using 
-                    Multi-Party Computation, ensuring no single party ever has access to complete private keys
+                    <strong>Managed Burner Wallets</strong> — Burner wallets are created and used for routing, 
+                    with signing handled by a managed wallet provider (so private keys are not exposed to the browser).
                   </li>
                   <li>
                     <strong>Deterministic Destruction</strong> — After a wallet completes its routing duty, 
-                    its key material is cryptographically destroyed and the address is permanently retired
+                    its key material is retired from active use and rotated out of circulation
                   </li>
                   <li>
-                    <strong>Liquidity Optimization</strong> — Our AI-powered routing algorithm selects 
-                    optimal paths based on current network congestion, gas costs, and anonymity set size
+                    <strong>Routing Randomization</strong> — Routing parameters include randomized hop counts and timing jitter
                   </li>
                   <li>
-                    <strong>Failsafe Recovery</strong> — If any hop fails, funds are automatically 
-                    rerouted through alternative paths without user intervention
+                    <strong>Step-Based Execution</strong> — Transfers execute as a series of steps with status tracking, so failures can be detected and handled
                   </li>
                 </ul>
 
@@ -253,19 +271,19 @@ export default function DocsPage() {
                 <div className="docs-params">
                   <div className="docs-param">
                     <span className="docs-param-label">Minimum Hops</span>
-                    <span className="docs-param-value">3</span>
+                    <span className="docs-param-value">2</span>
                   </div>
                   <div className="docs-param">
                     <span className="docs-param-label">Maximum Hops</span>
-                    <span className="docs-param-value">7</span>
+                    <span className="docs-param-value">5</span>
                   </div>
                   <div className="docs-param">
                     <span className="docs-param-label">Avg. Completion Time</span>
-                    <span className="docs-param-value">15-45 seconds</span>
+                    <span className="docs-param-value">Varies</span>
                   </div>
                   <div className="docs-param">
                     <span className="docs-param-label">Anonymity Set Size</span>
-                    <span className="docs-param-value">1,000+ transactions</span>
+                    <span className="docs-param-value">Varies</span>
                   </div>
                 </div>
               </div>
@@ -314,13 +332,12 @@ export default function DocsPage() {
                   </div>
                 </div>
                 <p className="docs-fee-note">
-                  Hold $UWU tokens in your wallet to unlock <strong>unlimited free private transfers</strong>. 
+                  Hold $UWU tokens in your wallet to unlock <strong>free private transfers</strong>. 
                   For non-holders, a small 0.5% fee is deducted from the transfer amount to support protocol 
                   development and infrastructure costs.
                 </p>
                 <div className="docs-highlight">
-                  <strong>No Hidden Fees:</strong> Network gas fees are included in our quoted fee. 
-                  What you see is what you pay.
+                  <strong>Transparent Fees:</strong> Fees are shown in the UI. Network fees may apply when funding the transfer.
                 </div>
               </div>
             </section>
@@ -338,23 +355,19 @@ export default function DocsPage() {
                 <ul className="docs-list">
                   <li>
                     <strong>Non-Custodial Design</strong> — We never have access to your funds. All routing 
-                    is performed through cryptographic commitments, not custody transfers
+                    is performed through user-funded routing plans and server-side execution, not custody transfers
                   </li>
                   <li>
-                    <strong>Audited Smart Contracts</strong> — Our Solana programs have been audited by 
-                    leading security firms and are open source for community review
+                    <strong>Defense-in-Depth</strong> — We validate inputs, use strict allowlists where possible, and design server routes to avoid secret exposure
                   </li>
                   <li>
-                    <strong>No Data Retention</strong> — We do not store transaction history, wallet 
-                    associations, IP addresses, or any identifying information
+                    <strong>Minimal Data</strong> — We store only what&apos;s needed to execute and track routing plans; on-chain transactions remain publicly visible
                   </li>
                   <li>
-                    <strong>Encrypted Communications</strong> — All API communications use TLS 1.3 with 
-                    certificate pinning to prevent MITM attacks
+                    <strong>Encrypted Communications</strong> — All API communications use HTTPS
                   </li>
                   <li>
-                    <strong>Rate Limiting & DDoS Protection</strong> — Enterprise-grade infrastructure 
-                    protects against service disruption attacks
+                    <strong>Operational Controls</strong> — Production deployments should use rate limiting and monitoring appropriate for your environment
                   </li>
                 </ul>
 
@@ -407,21 +420,21 @@ export default function DocsPage() {
                     <h4>Is Uwu Swap a mixer?</h4>
                     <p>
                       No. Unlike traditional mixers that pool funds, Uwu Swap uses ephemeral routing where 
-                      your funds never commingle with others. Each transfer has its own isolated routing path.
+                      each transfer uses its own isolated routing path rather than a shared pool.
                     </p>
                   </div>
                   <div className="docs-faq-item">
                     <h4>Do I need to connect my wallet?</h4>
                     <p>
-                      No! Our Quick Send mode allows completely anonymous transfers. Just enter a destination, 
-                      get a deposit address, and send from any wallet. No connection required.
+                      For <strong>AI Assistant</strong> transfers, yes—you&apos;ll connect a wallet to sign the initial funding transaction.
+                      <strong>Quick Send</strong> (no wallet connect) is coming soon and may be disabled in production until it&apos;s ready.
                     </p>
                   </div>
                   <div className="docs-faq-item">
                     <h4>How long do transfers take?</h4>
                     <p>
-                      Most transfers complete in 15-45 seconds. Complex routes with more hops may take up to 
-                      2 minutes. You can track progress in real-time.
+                      Transfer time varies based on hop count, network conditions, and confirmations.
+                      You can track progress in real-time in the UI.
                     </p>
                   </div>
                   <div className="docs-faq-item">
@@ -433,8 +446,7 @@ export default function DocsPage() {
                   <div className="docs-faq-item">
                     <h4>What if my transfer fails?</h4>
                     <p>
-                      Our failsafe system automatically reroutes failed transfers. In the rare case of 
-                      complete failure, funds are returned to the original deposit address within 5 minutes.
+                      If a hop fails, the UI will show the current status. If you run into issues, try again later or reach out to support.
                     </p>
                   </div>
                 </div>
