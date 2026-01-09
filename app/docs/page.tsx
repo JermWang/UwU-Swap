@@ -97,7 +97,7 @@ export default function DocsPage() {
                 <p>
                   Uwu Swap is a <strong>non-custodial privacy layer</strong> built on top of Solana that enables 
                   privacy-oriented token transfers. Unlike basic direct sends, Uwu Swap uses an 
-                  <strong>Ephemeral Routing Protocol (ERP)</strong> to route through short-lived burner wallets 
+                  <strong>Ephemeral Routing Protocol (ERP)</strong> to route through short-lived routing accounts 
                   to make simple address-to-address traceability harder.
                 </p>
                 <p>
@@ -125,10 +125,10 @@ export default function DocsPage() {
                 <h3 className="docs-subsection-title">How Privacy Chain Works</h3>
                 <ul className="docs-list">
                   <li>
-                    <strong>Ephemeral Routing</strong> — Your transfer routes through short-lived burner wallets to help reduce simple input/output correlation
+                    <strong>Ephemeral Routing</strong> — Your transfer routes through short-lived routing accounts to help reduce simple input/output correlation
                   </li>
                   <li>
-                    <strong>Multi-hop Routing</strong> — Funds route through a short chain of burner wallets to 
+                    <strong>Multi-hop Routing</strong> — Funds route through a short chain of ephemeral hops to 
                     reduce direct address-to-address traceability
                   </li>
                   <li>
@@ -245,14 +245,14 @@ export default function DocsPage() {
               <div className="docs-card">
                 <p>
                   Our <strong>Ephemeral Routing Engine (ERE)</strong> is the backbone of Uwu Swap&apos;s privacy 
-                  infrastructure. It coordinates the creation and use of short-lived burner wallets that are 
+                  infrastructure. It coordinates the creation and use of short-lived routing accounts that are 
                   used to route transfers through multiple hops.
                 </p>
 
                 <h3 className="docs-subsection-title">Technical Architecture</h3>
                 <ul className="docs-list">
                   <li>
-                    <strong>Managed Burner Wallets</strong> — Burner wallets are created and used for routing, 
+                    <strong>Managed Routing Keys</strong> — Routing accounts are created and used for multi-hop transfers, 
                     with signing handled by a managed wallet provider (so private keys are not exposed to the browser).
                   </li>
                   <li>

@@ -589,7 +589,10 @@ Hold $UWU tokens for zero-fee transfers!`,
         amountLamports: solToLamports(planData.amount).toString(),
       });
 
-      addMessage("assistant", `✅ Transfer signed! TX: \`${signature.slice(0, 12)}...\`\n\nNow routing through burner wallets...`);
+      addMessage(
+        "assistant",
+        `✅ Transfer signed! TX: \`${signature.slice(0, 12)}...\`\n\nNow applying privacy-preserving multi-hop routing...`
+      );
       startTransferPolling({ planId: planData.id, fundingSignature: signature });
 
     } catch (e) {

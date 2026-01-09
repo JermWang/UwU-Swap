@@ -72,7 +72,7 @@ Privacy-first token transfers on Solana, nya~
 1. Tell me where to send your tokens~
 2. I'll generate a sneaky routing plan
 3. Sign the transaction in your wallet
-4. Watch your tokens hop through burner wallets!
+4. Watch your tokens move through a privacy-preserving route!
 
 ## Fees
 - **$UWU holders**: Zero fees (you're the best~)
@@ -95,7 +95,7 @@ export function generateTransferConfirmation(input: {
 
 **Amount**: ${amount} SOL
 **Destination**: \`${shortDest}\`
-**Privacy Hops**: ${hopCount} sneaky wallets
+**Privacy Hops**: ${hopCount} hops
 **Estimated Time**: ~${timeSeconds}s
 
 `;
@@ -199,7 +199,7 @@ export function generateSigningMessage(): string {
 }
 
 export function generateRoutingStartMessage(): string {
-  return "Starting private transfer! Routing through burner wallets, nya~";
+  return "Starting private transfer! Applying privacy-preserving multi-hop routing, nya~";
 }
 
 // ============================================================================
