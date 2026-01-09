@@ -3,21 +3,28 @@
 @tailwind utilities;
 
 /* ============================================================================
-   Uwu Swap - Cyberpunk Green/Black Theme
-   Professional, cutting-edge, futuristic aesthetic
+   Uwu Swap - Kawaii Pink/Black Theme
+   Cute, uwu aesthetic with maximum pink vibes
    ============================================================================ */
 
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
 :root {
-  /* Cyberpunk Color Palette */
-  --cyber-green: #00FF88;
-  --cyber-green-light: #4FFFB0;
-  --cyber-green-dark: #00CC6A;
-  --cyber-neon: #39FF14;
-  --cyber-mint: #00FFCC;
-  --cyber-teal: #00CED1;
+  /* Kawaii Pink Color Palette */
+  --cyber-pink: #FF69B4;
+  --cyber-pink-light: #FFB6C1;
+  --cyber-pink-dark: #DB2777;
+  --cyber-neon: #FF1493;
+  --cyber-rose: #FF85A2;
+  --cyber-magenta: #FF00FF;
   --navbar-height: 88px;
+  
+  /* Legacy aliases for compatibility */
+  --cyber-green: var(--cyber-pink);
+  --cyber-green-light: var(--cyber-pink-light);
+  --cyber-green-dark: var(--cyber-pink-dark);
+  --cyber-mint: var(--cyber-rose);
+  --cyber-teal: var(--cyber-magenta);
   
   /* Dark Backgrounds */
   --dark-bg: #0A0A0F;
@@ -31,11 +38,13 @@
   --text-primary: #FFFFFF;
   --text-secondary: #A0A0B0;
   --text-muted: #606070;
-  --text-accent: #00FF88;
+  --text-accent: #FF69B4;
   
   /* Shadows & Glows */
-  --glow-green: 0 0 30px rgba(0, 255, 136, 0.3);
-  --glow-green-intense: 0 0 60px rgba(0, 255, 136, 0.5);
+  --glow-pink: 0 0 30px rgba(255, 105, 180, 0.3);
+  --glow-pink-intense: 0 0 60px rgba(255, 105, 180, 0.5);
+  --glow-green: var(--glow-pink);
+  --glow-green-intense: var(--glow-pink-intense);
   --shadow-dark: 0 4px 20px rgba(0, 0, 0, 0.5);
 }
 
@@ -128,7 +137,7 @@ body {
   width: 32px;
   height: 32px;
   color: var(--cyber-green);
-  filter: drop-shadow(0 0 8px rgba(0, 255, 136, 0.5));
+  filter: drop-shadow(0 0 8px rgba(255, 105, 180, 0.5));
 }
 
 .navbar-brand-text {
@@ -158,12 +167,12 @@ body {
 }
 
 .navbar-link:hover {
-  background: rgba(0, 255, 136, 0.1);
+  background: rgba(255, 105, 180, 0.1);
   color: var(--cyber-green);
 }
 
 .navbar-link--active {
-  background: rgba(0, 255, 136, 0.15);
+  background: rgba(255, 105, 180, 0.15);
   color: var(--cyber-green);
 }
 
@@ -183,10 +192,10 @@ body {
   align-items: center;
   gap: 8px;
   padding: 8px 14px;
-  background: rgba(0, 255, 136, 0.08);
+  background: rgba(255, 105, 180, 0.08);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(0, 255, 136, 0.25);
+  border: 1px solid rgba(255, 105, 180, 0.25);
   border-radius: 20px;
   cursor: pointer;
   transition: all 0.2s ease;
@@ -194,9 +203,9 @@ body {
 }
 
 .navbar-contract-btn:hover:not(:disabled) {
-  background: rgba(0, 255, 136, 0.15);
-  border-color: rgba(0, 255, 136, 0.4);
-  box-shadow: 0 0 20px rgba(0, 255, 136, 0.2);
+  background: rgba(255, 105, 180, 0.15);
+  border-color: rgba(255, 105, 180, 0.4);
+  box-shadow: 0 0 20px rgba(255, 105, 180, 0.2);
 }
 
 .navbar-contract-btn:disabled {
@@ -311,7 +320,7 @@ body {
 
 .swap-title span {
   color: var(--cyber-green);
-  text-shadow: 0 0 30px rgba(0, 255, 136, 0.5);
+  text-shadow: 0 0 30px rgba(255, 105, 180, 0.5);
 }
 
 .swap-subtitle {
@@ -372,7 +381,7 @@ body {
 }
 
 .swap-balance-badge {
-  background: rgba(0, 255, 136, 0.15);
+  background: rgba(255, 105, 180, 0.15);
   border: 1px solid var(--cyber-green);
   padding: 4px 10px;
   border-radius: 6px;
@@ -497,7 +506,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 255, 136, 0.15);
+  background: rgba(255, 105, 180, 0.15);
   border: 1px solid var(--cyber-green);
   border-radius: 50%;
   font-size: 10px;
@@ -518,8 +527,8 @@ body {
 }
 
 .swap-noncustodial-note--success {
-  background: rgba(0, 255, 136, 0.08);
-  border: 1px solid rgba(0, 255, 136, 0.25);
+  background: rgba(255, 105, 180, 0.08);
+  border: 1px solid rgba(255, 105, 180, 0.25);
   color: var(--text-secondary);
 }
 
@@ -746,7 +755,7 @@ body {
 }
 
 .swap-send-btn--secondary {
-  background: rgba(0, 255, 136, 0.1);
+  background: rgba(255, 105, 180, 0.1);
   border: 1px solid var(--cyber-green);
 }
 
@@ -925,7 +934,7 @@ body {
 
 .swap-input:focus {
   border-color: var(--cyber-green);
-  box-shadow: 0 0 0 3px rgba(0, 255, 136, 0.1);
+  box-shadow: 0 0 0 3px rgba(255, 105, 180, 0.1);
 }
 
 .swap-input:disabled {
@@ -1039,7 +1048,7 @@ body {
   width: 36px;
   height: 36px;
   margin: 0 auto 8px;
-  background: rgba(0, 255, 136, 0.15);
+  background: rgba(255, 105, 180, 0.15);
   border: 1px solid var(--cyber-green);
   border-radius: 8px;
   display: flex;
@@ -1300,12 +1309,12 @@ body {
 }
 
 .docs-toc-link:hover {
-  background: rgba(0, 255, 136, 0.1);
+  background: rgba(255, 105, 180, 0.1);
   color: var(--text-primary);
 }
 
 .docs-toc-link--active {
-  background: rgba(0, 255, 136, 0.15);
+  background: rgba(255, 105, 180, 0.15);
   color: var(--cyber-green);
   font-weight: 500;
 }
@@ -1539,8 +1548,8 @@ body {
 
 /* Highlight Box */
 .docs-highlight {
-  background: rgba(0, 255, 136, 0.08);
-  border: 1px solid rgba(0, 255, 136, 0.25);
+  background: rgba(255, 105, 180, 0.08);
+  border: 1px solid rgba(255, 105, 180, 0.25);
   border-radius: 10px;
   padding: 16px;
   margin-top: 16px;
@@ -1762,7 +1771,7 @@ body {
 .swap-avatar--anime {
   background: none !important;
   border: 2px solid var(--cyber-green);
-  box-shadow: 0 0 15px rgba(0, 255, 136, 0.3);
+  box-shadow: 0 0 15px rgba(255, 105, 180, 0.3);
 }
 
 .swap-avatar--anime img {
@@ -1787,7 +1796,7 @@ body {
   height: 100%;
   object-fit: cover;
   border-radius: 6px;
-  filter: drop-shadow(0 0 6px rgba(0, 255, 136, 0.3));
+  filter: drop-shadow(0 0 6px rgba(255, 105, 180, 0.3));
 }
 
 /* Navbar Logo Image */
@@ -1795,7 +1804,7 @@ body {
   width: 36px;
   height: 36px;
   object-fit: contain;
-  filter: drop-shadow(0 0 10px rgba(0, 255, 136, 0.4));
+  filter: drop-shadow(0 0 10px rgba(255, 105, 180, 0.4));
   border-radius: 10px;
 }
 
@@ -1838,7 +1847,7 @@ body {
 
 .border-glow {
   border-color: var(--cyber-green);
-  box-shadow: 0 0 20px rgba(0, 255, 136, 0.2);
+  box-shadow: 0 0 20px rgba(255, 105, 180, 0.2);
 }
 
 /* ============================================================================
@@ -2048,7 +2057,7 @@ body {
 
 .transfer-modal-badge {
   grid-column: 1 / -1;
-  background: linear-gradient(135deg, rgba(0, 255, 136, 0.1) 0%, rgba(0, 255, 204, 0.1) 100%);
+  background: linear-gradient(135deg, rgba(255, 105, 180, 0.1) 0%, rgba(255, 182, 193, 0.1) 100%);
   border: 1px solid var(--cyber-green);
   border-radius: 8px;
   padding: 8px 16px;
@@ -2062,8 +2071,8 @@ body {
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  background: rgba(0, 255, 136, 0.05);
-  border: 1px solid rgba(0, 255, 136, 0.2);
+  background: rgba(255, 105, 180, 0.05);
+  border: 1px solid rgba(255, 105, 180, 0.2);
   border-radius: 8px;
   padding: 12px;
   font-size: 0.85rem;
