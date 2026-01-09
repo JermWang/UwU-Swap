@@ -52,6 +52,7 @@ export type UwuPrivyTransferData = {
   state: {
     funded: boolean;
     fundingSignature?: string;
+    fundingSignatureSetAtUnixMs?: number;
     feeCollected: boolean;
     feeSignature?: string;
     currentHop: number;

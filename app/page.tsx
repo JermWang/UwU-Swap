@@ -815,11 +815,19 @@ Hold $UWU tokens for zero-fee transfers!`,
                   <div className="swap-progress-bar">
                     <div
                       className="swap-progress-fill"
-                      style={{ width: `${(transferState.currentHop / transferState.hopCount) * 100}%` }}
+                      style={{
+                        width: `${
+                          transferState.status === "routing" && transferState.hopCount > 0
+                            ? (transferState.currentHop / transferState.hopCount) * 100
+                            : 5
+                        }%`,
+                      }}
                     />
                   </div>
                   <div className="swap-progress-text">
-                    Routing hop {transferState.currentHop} of {transferState.hopCount}
+                    {transferState.status === "awaiting_funding"
+                      ? "Waiting for funding confirmation..."
+                      : `Routing hop ${transferState.currentHop} of ${transferState.hopCount}`}
                   </div>
                 </div>
               )}

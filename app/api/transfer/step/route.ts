@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { PublicKey } from "@solana/web3.js";
+import { Connection, PublicKey } from "@solana/web3.js";
 
-import { getConnection } from "../../../lib/rpc";
+import { getConnectionForRpcUrl, getRpcUrls } from "../../../lib/rpc";
 import { getSafeErrorMessage } from "../../../lib/safeError";
 import { getUwuTransfer, mutateUwuTransfer } from "../../../lib/uwuTransferStore";
 import type { UwuPrivyTransferData } from "../../../lib/uwuPrivyRouter";
@@ -18,13 +18,44 @@ import {
 export const runtime = "nodejs";
 
 const IN_FLIGHT_STALE_MS = 120_000;
+const RPC_TIMEOUT_MS = 10_000;
+
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error("RPC timeout")), ms);
+    p.then(
+      (v) => {
+        clearTimeout(t);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(t);
+        reject(e);
+      }
+    );
+  });
+}
+
+async function withAnyConnection<T>(fn: (connection: Connection) => Promise<T>): Promise<T> {
+  const urls = getRpcUrls();
+  let lastErr: unknown;
+  for (const url of urls) {
+    try {
+      const connection = getConnectionForRpcUrl(url);
+      return await withTimeout(fn(connection), RPC_TIMEOUT_MS);
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
+}
 
 function mustHaveFeePayerConfigured(): void {
   const s = String(process.env.ESCROW_FEE_PAYER_SECRET_KEY ?? "").trim();
   if (!s) throw new Error("ESCROW_FEE_PAYER_SECRET_KEY is required for routing execution on Vercel");
 }
 
-async function reconcileStaleInFlight(opts: { connection: ReturnType<typeof getConnection>; id: string; data: UwuPrivyTransferData }): Promise<void> {
+async function reconcileStaleInFlight(opts: { connection: Connection; id: string; data: UwuPrivyTransferData }): Promise<void> {
   const { connection, id } = opts;
   const current = opts.data;
   const inFlight = current?.state?.inFlight;
@@ -166,7 +197,7 @@ export async function POST(req: NextRequest) {
 
     if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
 
-    const connection = getConnection();
+    const connection = await withAnyConnection(async (c) => c);
 
     const rec = await getUwuTransfer<UwuPrivyTransferData>(id);
     if (!rec) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -195,17 +226,72 @@ export async function POST(req: NextRequest) {
     // Funding detection
     if (refreshed.status === "awaiting_funding" && !state.funded) {
       const burner0 = plan.burners?.[0];
-      if (!burner0?.address) return NextResponse.json({ error: "Missing burner wallet" }, { status: 500 });
+      if (!burner0?.address) return NextResponse.json({ error: "Missing routing account" }, { status: 500 });
+
+      const sig = fundingSignature || state.fundingSignature;
+      if (sig && !state.fundingSignature) {
+        await mutateUwuTransfer<UwuPrivyTransferData>({
+          id,
+          mutate: (r) => ({
+            status: r.status,
+            data: {
+              ...r.data,
+              state: {
+                ...r.data.state,
+                fundingSignature: sig,
+                fundingSignatureSetAtUnixMs: Date.now(),
+              },
+            },
+          }),
+        });
+      }
 
       const burner0Pubkey = new PublicKey(burner0.address);
 
+      if (sig) {
+        const st = await withAnyConnection((c) => c.getSignatureStatuses([sig], { searchTransactionHistory: true }));
+        const s: any = st?.value?.[0];
+        if (s?.err) {
+          await mutateUwuTransfer<UwuPrivyTransferData>({
+            id,
+            mutate: (r) => ({
+              status: "failed",
+              data: {
+                ...r.data,
+                state: { ...r.data.state, lastError: `Funding transaction failed: ${JSON.stringify(s.err)}` },
+              },
+            }),
+          });
+          return NextResponse.json({ ok: true, id, status: "failed" });
+        }
+
+        const setAt = Number(state.fundingSignatureSetAtUnixMs || 0);
+        if (!s && setAt && Date.now() - setAt > 90_000) {
+          await mutateUwuTransfer<UwuPrivyTransferData>({
+            id,
+            mutate: (r) => ({
+              status: "failed",
+              data: {
+                ...r.data,
+                state: { ...r.data.state, lastError: "Funding transaction was not found on-chain. Please retry." },
+              },
+            }),
+          });
+          return NextResponse.json({ ok: true, id, status: "failed" });
+        }
+      }
+
       let funded = false;
       if (plan.asset === "SOL") {
-        const bal = await connection.getBalance(burner0Pubkey, "confirmed");
-        funded = BigInt(bal) >= amountLamports;
+        const balConfirmed = await withAnyConnection((c) => c.getBalance(burner0Pubkey, "confirmed"));
+        funded = BigInt(balConfirmed) >= amountLamports;
+        if (!funded) {
+          const balProcessed = await withAnyConnection((c) => c.getBalance(burner0Pubkey, "processed"));
+          funded = BigInt(balProcessed) >= amountLamports;
+        }
       } else {
         const mint = new PublicKey((plan.asset as any).mint);
-        const bal = await getTokenBalanceForMint({ connection, owner: burner0Pubkey, mint });
+        const bal = await withAnyConnection((c) => getTokenBalanceForMint({ connection: c, owner: burner0Pubkey, mint }));
         funded = bal.amountRaw >= amountLamports;
       }
 
@@ -226,6 +312,7 @@ export async function POST(req: NextRequest) {
               ...r.data.state,
               funded: true,
               fundingSignature: fundingSignature || r.data.state.fundingSignature,
+              fundingSignatureSetAtUnixMs: r.data.state.fundingSignatureSetAtUnixMs || (fundingSignature ? Date.now() : undefined),
               nextActionAtUnixMs: nextActionAt,
             },
           },

@@ -36,6 +36,7 @@ export async function GET(req: NextRequest) {
       },
       state: {
         funded: data?.state?.funded ?? false,
+        fundingSignature: data?.state?.fundingSignature,
         feeCollected: data?.state?.feeCollected ?? false,
         currentHop: data?.state?.currentHop ?? 0,
         hopResults: Array.isArray(data?.state?.hopResults) ? data.state.hopResults : [],
