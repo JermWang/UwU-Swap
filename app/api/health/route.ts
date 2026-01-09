@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { hasDatabase, getPool } from "../../lib/db";
-import { getConnection } from "../../lib/solana";
-import { getSafeErrorMessage } from "../../lib/safeError";
+import { getConnection } from "../../lib/rpc";
 
 export const runtime = "nodejs";
 
@@ -15,22 +13,9 @@ type HealthCheck = {
   error?: string;
 };
 
-/**
- * GET /api/health
- * 
- * Health check endpoint for monitoring system status.
- * Returns status of:
- * - Database connectivity
- * - Solana RPC connectivity
- * - Overall system health
- */
 export async function GET() {
   const checks: HealthCheck[] = [];
   const startTime = Date.now();
-
-  // Check database connectivity
-  const dbCheck = await checkDatabase();
-  checks.push(dbCheck);
 
   // Check Solana RPC connectivity
   const solanaCheck = await checkSolanaRpc();
@@ -53,46 +38,13 @@ export async function GET() {
   return NextResponse.json(response, { status: httpStatus });
 }
 
-async function checkDatabase(): Promise<HealthCheck> {
-  const start = Date.now();
-  
-  if (!hasDatabase()) {
-    return {
-      name: "database",
-      status: "degraded",
-      latencyMs: Date.now() - start,
-      error: "Database not configured (mock mode)",
-    };
-  }
-
-  try {
-    const pool = getPool();
-    const result = await pool.query("SELECT 1 as ok");
-    const ok = result.rows[0]?.ok === 1;
-    
-    return {
-      name: "database",
-      status: ok ? "ok" : "error",
-      latencyMs: Date.now() - start,
-      error: ok ? undefined : "Query returned unexpected result",
-    };
-  } catch (e) {
-    return {
-      name: "database",
-      status: "error",
-      latencyMs: Date.now() - start,
-      error: getSafeErrorMessage(e),
-    };
-  }
-}
-
 async function checkSolanaRpc(): Promise<HealthCheck> {
   const start = Date.now();
-  
+
   try {
     const connection = getConnection();
     const slot = await connection.getSlot("confirmed");
-    
+
     if (!Number.isFinite(slot) || slot <= 0) {
       return {
         name: "solana_rpc",
@@ -103,10 +55,8 @@ async function checkSolanaRpc(): Promise<HealthCheck> {
     }
 
     const latencyMs = Date.now() - start;
-    
-    // Consider degraded if RPC is slow (>2s)
     const status: HealthStatus = latencyMs > 2000 ? "degraded" : "ok";
-    
+
     return {
       name: "solana_rpc",
       status,
@@ -114,11 +64,12 @@ async function checkSolanaRpc(): Promise<HealthCheck> {
       error: status === "degraded" ? "High latency" : undefined,
     };
   } catch (e) {
+    const error = e instanceof Error ? e.message : String(e);
     return {
       name: "solana_rpc",
       status: "error",
       latencyMs: Date.now() - start,
-      error: getSafeErrorMessage(e),
+      error,
     };
   }
 }
