@@ -31,7 +31,7 @@ export default function TransferModal({ isOpen, data, onConfirm, onCancel, isLoa
   
   const shortResolved = `${data.resolvedAddress.slice(0, 6)}...${data.resolvedAddress.slice(-4)}`;
   const isSolDomain = data.destination.endsWith(".sol");
-  const estimatedSeconds = Math.ceil(data.estimatedTimeMs / 1000);
+  const estimatedMinutes = Math.ceil(data.estimatedTimeMs / 60000);
 
   return (
     <div className="transfer-modal-overlay" onClick={onCancel}>
@@ -77,11 +77,11 @@ export default function TransferModal({ isOpen, data, onConfirm, onCancel, isLoa
           <div className="transfer-modal-details">
             <div className="transfer-modal-detail">
               <span className="transfer-modal-detail-label">Privacy Hops</span>
-              <span className="transfer-modal-detail-value">{data.hopCount} wallets</span>
+              <span className="transfer-modal-detail-value">{data.hopCount}</span>
             </div>
             <div className="transfer-modal-detail">
               <span className="transfer-modal-detail-label">Est. Time</span>
-              <span className="transfer-modal-detail-value">~{estimatedSeconds}s</span>
+              <span className="transfer-modal-detail-value">~{estimatedMinutes} min</span>
             </div>
             <div className="transfer-modal-detail">
               <span className="transfer-modal-detail-label">Fee</span>
@@ -101,7 +101,7 @@ export default function TransferModal({ isOpen, data, onConfirm, onCancel, isLoa
               <circle cx="12" cy="12" r="10" />
               <path d="M12 16v-4M12 8h.01" />
             </svg>
-            <span>Your tokens will route through {data.hopCount} ephemeral wallets for privacy.</span>
+            <span>Your tokens will route through {data.hopCount} privacy hops before delivery.</span>
           </div>
         </div>
 

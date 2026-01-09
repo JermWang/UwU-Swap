@@ -4,10 +4,14 @@ import { v4 as uuidv4 } from "uuid";
 import { privyCreateSolanaWallet } from "./privy";
 import { checkUwuTokenHolder, calculateFee, getTreasuryWallet, TransferAsset } from "./uwuRouter";
 
-const MIN_HOPS = 2;
-const MAX_HOPS = 5;
+const MIN_HOPS = 7;
+const MAX_HOPS = 12;
 const MIN_HOP_DELAY_MS = 500;
 const MAX_HOP_DELAY_MS = 3000;
+
+// Minimum total transfer time (2-5 minutes) for timing obfuscation
+export const MIN_TRANSFER_TIME_MS = 120_000; // 2 minutes minimum
+export const MAX_TRANSFER_TIME_MS = 300_000; // 5 minutes maximum
 
 function randomInt(min: number, max: number): number {
   return Math.floor(Math.random() * (max - min + 1)) + min;
@@ -103,7 +107,10 @@ export async function createPrivyRoutingPlan(input: {
     totalDelayMs += d;
   }
 
-  const estimatedCompletionMs = totalDelayMs + hopCount * 2000;
+  // Estimated time is the larger of: actual hop time OR minimum obfuscation time (2-5 min)
+  const hopExecutionTime = totalDelayMs + hopCount * 2000;
+  const randomMinTime = MIN_TRANSFER_TIME_MS + Math.random() * (MAX_TRANSFER_TIME_MS - MIN_TRANSFER_TIME_MS);
+  const estimatedCompletionMs = Math.max(hopExecutionTime, randomMinTime);
   const nowUnix = Math.floor(Date.now() / 1000);
   const feeCollected = feeLamports === 0n;
 

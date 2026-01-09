@@ -225,7 +225,7 @@ export default function DocsPage() {
                     <div className="docs-step-number">4</div>
                     <div className="docs-step-content">
                       <h4>Privacy Chain Routing</h4>
-                      <p>Funds enter our Privacy Chain and route through 2-5 ephemeral hops</p>
+                      <p>Funds enter our Privacy Chain and route through 7-12 ephemeral hops</p>
                     </div>
                   </div>
                   <div className="docs-step">
@@ -271,15 +271,15 @@ export default function DocsPage() {
                 <div className="docs-params">
                   <div className="docs-param">
                     <span className="docs-param-label">Minimum Hops</span>
-                    <span className="docs-param-value">2</span>
+                    <span className="docs-param-value">7</span>
                   </div>
                   <div className="docs-param">
                     <span className="docs-param-label">Maximum Hops</span>
-                    <span className="docs-param-value">5</span>
+                    <span className="docs-param-value">12</span>
                   </div>
                   <div className="docs-param">
                     <span className="docs-param-label">Avg. Completion Time</span>
-                    <span className="docs-param-value">Varies</span>
+                    <span className="docs-param-value">2-5 min</span>
                   </div>
                   <div className="docs-param">
                     <span className="docs-param-label">Anonymity Set Size</span>

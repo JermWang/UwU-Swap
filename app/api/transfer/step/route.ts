@@ -5,6 +5,7 @@ import { getConnection } from "../../../lib/rpc";
 import { getSafeErrorMessage } from "../../../lib/safeError";
 import { getUwuTransfer, mutateUwuTransfer } from "../../../lib/uwuTransferStore";
 import type { UwuPrivyTransferData } from "../../../lib/uwuPrivyRouter";
+import { MIN_TRANSFER_TIME_MS, MAX_TRANSFER_TIME_MS } from "../../../lib/uwuPrivyRouter";
 import { getTreasuryWallet } from "../../../lib/uwuRouter";
 import {
   findRecentSplTransferSignature,
@@ -307,8 +308,40 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, id, status: "complete" });
     }
 
+    const isFinalHop = hopIndex === hopCount - 1;
     const fromBurner = plan.burners[hopIndex];
-    const toPubkey = hopIndex === hopCount - 1 ? new PublicKey(plan.toWallet) : new PublicKey(plan.burners[hopIndex + 1].address);
+    const toPubkey = isFinalHop ? new PublicKey(plan.toWallet) : new PublicKey(plan.burners[hopIndex + 1].address);
+
+    // TIMING OBFUSCATION: Delay final distribution until minimum time has passed
+    if (isFinalHop) {
+      const createdAtMs = Number(plan.createdAtUnix || 0) * 1000;
+      const elapsedMs = Date.now() - createdAtMs;
+      
+      // Random target time between MIN and MAX (2-5 minutes)
+      const targetTimeMs = MIN_TRANSFER_TIME_MS + Math.random() * (MAX_TRANSFER_TIME_MS - MIN_TRANSFER_TIME_MS);
+      
+      if (elapsedMs < targetTimeMs) {
+        const remainingMs = Math.ceil(targetTimeMs - elapsedMs);
+        const delayUntil = Date.now() + remainingMs;
+        
+        await mutateUwuTransfer<UwuPrivyTransferData>({
+          id,
+          mutate: (r) => ({
+            status: r.status,
+            data: { ...r.data, state: { ...r.data.state, nextActionAtUnixMs: delayUntil } },
+          }),
+        });
+        
+        return NextResponse.json({ 
+          ok: true, 
+          id, 
+          status: "routing", 
+          waiting: true, 
+          nextActionAtUnixMs: delayUntil,
+          message: "Waiting for timing obfuscation before final delivery"
+        });
+      }
+    }
 
     await mutateUwuTransfer<UwuPrivyTransferData>({
       id,
