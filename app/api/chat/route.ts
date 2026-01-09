@@ -25,6 +25,11 @@ type ChatResponse = {
   action: ChatAction | null;
 };
 
+function normalizeDestination(raw: string): string {
+  const s = String(raw ?? "").trim();
+  return s.replace(/[\s\]\)\}\.,;:!\?]+$/g, "");
+}
+
 function heuristicTransferActionFromText(text: string): ChatAction | null {
   const raw = String(text ?? "").trim();
   if (!raw) return null;
@@ -37,7 +42,7 @@ function heuristicTransferActionFromText(text: string): ChatAction | null {
   if (!amountMatch || !destMatch) return null;
 
   const amountSol = Number(amountMatch[1]);
-  const destination = String(destMatch[1] ?? "").trim();
+  const destination = normalizeDestination(destMatch[1] ?? "");
   if (!Number.isFinite(amountSol) || amountSol <= 0) return null;
 
   // Allow .sol domains to be resolved client-side.
@@ -80,7 +85,7 @@ function validateTransferAction(action: any): ChatAction | null {
   const amountSol = Number(action.amountSol);
   if (!Number.isFinite(amountSol) || amountSol <= 0) return null;
 
-  const destination = String(action.destination ?? "").trim();
+  const destination = normalizeDestination(action.destination ?? "");
   if (!destination) return null;
 
   // Accept either a base58 pubkey OR a .sol domain (resolved in client before creating a plan).
@@ -99,10 +104,12 @@ async function callOpenAiChat(input: {
   system: string;
   messages: InboundMessage[];
 }): Promise<ChatResponse> {
+  const lastUser = [...input.messages].reverse().find((m) => m.role === "user");
+  const heuristic = heuristicTransferActionFromText(lastUser?.content ?? "");
+
   const apiKey = String(process.env.OPENAI_API_KEY ?? "").trim();
   if (!apiKey) {
-    const lastUser = [...input.messages].reverse().find((m) => m.role === "user");
-    const action = heuristicTransferActionFromText(lastUser?.content ?? "");
+    const action = heuristic;
     return {
       reply: action
         ? "I can help with that transfer, but the AI chat backend isn't configured yet. Please set `OPENAI_API_KEY` to enable full conversational answers."
@@ -133,9 +140,7 @@ async function callOpenAiChat(input: {
       typeof json?.error?.message === "string"
         ? json.error.message
         : `OpenAI request failed (${res.status})`;
-    const lastUser = [...input.messages].reverse().find((m) => m.role === "user");
-    const fallback = heuristicTransferActionFromText(lastUser?.content ?? "");
-    return { reply: msg, action: fallback };
+    return { reply: msg, action: heuristic };
   }
 
   const content = String(json?.choices?.[0]?.message?.content ?? "").trim();
@@ -145,9 +150,9 @@ async function callOpenAiChat(input: {
     const parsed = JSON.parse(content);
     const reply = String(parsed?.reply ?? "").trim();
     const action = validateTransferAction(parsed?.action) ?? null;
-    return { reply: reply || content, action };
+    return { reply: reply || content, action: action ?? heuristic };
   } catch {
-    return { reply: content, action: null };
+    return { reply: content, action: heuristic };
   }
 }
 
