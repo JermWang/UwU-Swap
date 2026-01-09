@@ -480,7 +480,7 @@ Hold $UWU tokens for zero-fee transfers!`,
     }
   };
 
-  const handleModalConfirm = async () => {
+  const handleModalConfirm = async (editedAmount: number, editedDestination: string) => {
     if (!transferModalData || !publicKey || !signTransaction) return;
 
     setIsModalSigning(true);
@@ -488,6 +488,60 @@ Hold $UWU tokens for zero-fee transfers!`,
     try {
       const rpcUrl = process.env.NEXT_PUBLIC_SOLANA_RPC_URL || "https://api.mainnet-beta.solana.com";
       const connection = new Connection(rpcUrl, "confirmed");
+
+      // Check if user made changes - if so, create a new routing plan
+      const amountChanged = editedAmount !== transferModalData.amount;
+      const destChanged = editedDestination !== transferModalData.destination;
+      
+      let planData = {
+        id: transferModalData.planId,
+        firstBurnerPubkey: transferModalData.firstBurnerPubkey,
+        hopCount: transferModalData.hopCount,
+        amount: transferModalData.amount,
+      };
+
+      if (amountChanged || destChanged) {
+        addMessage("assistant", "Creating new routing plan with your changes...");
+        
+        // Resolve .sol domain if needed
+        let resolvedAddress = editedDestination;
+        if (isSolDomain(editedDestination)) {
+          const resolved = await resolveAddressOrDomain(editedDestination, connection);
+          if (!resolved) {
+            addMessage("assistant", `❌ Could not resolve .sol domain: ${editedDestination}`);
+            setIsModalSigning(false);
+            return;
+          }
+          resolvedAddress = resolved.pubkey.toBase58();
+        }
+
+        // Create new routing plan
+        const planRes = await fetch("/api/transfer", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            fromWallet: publicKey.toBase58(),
+            toWallet: resolvedAddress,
+            amountSol: editedAmount,
+            asset: null,
+          }),
+        });
+
+        const newPlanData = await planRes.json();
+        if (newPlanData.error) {
+          addMessage("assistant", `❌ Failed to create transfer plan: ${newPlanData.error}`);
+          setIsModalSigning(false);
+          return;
+        }
+
+        planData = {
+          id: newPlanData.id,
+          firstBurnerPubkey: newPlanData.firstBurnerPubkey,
+          hopCount: newPlanData.hopCount,
+          amount: editedAmount,
+        };
+      }
+
       const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
 
       const tx = new Transaction();
@@ -499,8 +553,8 @@ Hold $UWU tokens for zero-fee transfers!`,
       tx.add(
         SystemProgram.transfer({
           fromPubkey: publicKey,
-          toPubkey: new PublicKey(transferModalData.firstBurnerPubkey),
-          lamports: Number(solToLamports(transferModalData.amount)),
+          toPubkey: new PublicKey(planData.firstBurnerPubkey),
+          lamports: Number(solToLamports(planData.amount)),
         })
       );
 
@@ -512,16 +566,16 @@ Hold $UWU tokens for zero-fee transfers!`,
       setTransferModalData(null);
       
       setTransferState({
-        planId: transferModalData.planId,
+        planId: planData.id,
         status: "awaiting_funding",
-        hopCount: transferModalData.hopCount,
+        hopCount: planData.hopCount,
         currentHop: 0,
-        firstBurnerPubkey: transferModalData.firstBurnerPubkey,
-        amountLamports: solToLamports(transferModalData.amount).toString(),
+        firstBurnerPubkey: planData.firstBurnerPubkey,
+        amountLamports: solToLamports(planData.amount).toString(),
       });
 
       addMessage("assistant", `✅ Transfer signed! TX: \`${signature.slice(0, 12)}...\`\n\nNow routing through burner wallets...`);
-      startTransferPolling({ planId: transferModalData.planId, fundingSignature: signature });
+      startTransferPolling({ planId: planData.id, fundingSignature: signature });
 
     } catch (e) {
       const error = e instanceof Error ? e.message : String(e);

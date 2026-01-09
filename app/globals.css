@@ -1851,13 +1851,13 @@ body {
 }
 
 /* ============================================================================
-   Transfer Confirmation Modal
+   Transfer Confirmation Modal - Swap Style
    ============================================================================ */
 
 .transfer-modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.8);
+  background: rgba(0, 0, 0, 0.85);
   backdrop-filter: blur(8px);
   display: flex;
   align-items: center;
@@ -1874,11 +1874,11 @@ body {
 
 .transfer-modal {
   background: var(--dark-card);
-  border: 1px solid var(--cyber-green);
+  border: 1px solid var(--dark-border);
   border-radius: 16px;
   width: 100%;
-  max-width: 420px;
-  box-shadow: var(--glow-green), var(--shadow-dark);
+  max-width: 440px;
+  box-shadow: var(--shadow-dark);
   animation: slideUp 0.3s ease-out;
 }
 
@@ -1897,12 +1897,11 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 20px 24px;
-  border-bottom: 1px solid var(--dark-border);
+  padding: 20px 24px 16px;
 }
 
 .transfer-modal-header h2 {
-  font-size: 1.25rem;
+  font-size: 1.1rem;
   font-weight: 600;
   color: var(--text-primary);
   margin: 0;
@@ -1911,191 +1910,242 @@ body {
 .transfer-modal-close {
   background: none;
   border: none;
-  color: var(--text-secondary);
-  font-size: 1.5rem;
+  color: var(--text-muted);
   cursor: pointer;
-  padding: 4px 8px;
-  line-height: 1;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   transition: color 0.2s;
+  border-radius: 6px;
 }
 
 .transfer-modal-close:hover {
   color: var(--text-primary);
+  background: var(--dark-bg);
 }
 
 .transfer-modal-body {
-  padding: 24px;
+  padding: 0 24px 24px;
 }
 
-.transfer-modal-amount {
-  display: flex;
-  align-items: baseline;
-  justify-content: center;
-  gap: 8px;
-  margin-bottom: 16px;
-}
-
-.transfer-modal-amount-value {
-  font-size: 3rem;
-  font-weight: 700;
-  color: var(--cyber-green);
-  font-family: 'JetBrains Mono', monospace;
-}
-
-.transfer-modal-amount-unit {
-  font-size: 1.5rem;
-  font-weight: 600;
-  color: var(--text-secondary);
-}
-
-.transfer-modal-arrow {
-  display: flex;
-  justify-content: center;
-  color: var(--cyber-green);
-  margin: 12px 0;
-  opacity: 0.7;
-}
-
-.transfer-modal-destination {
+/* Section Styles */
+.transfer-modal-section {
   background: var(--dark-bg);
   border: 1px solid var(--dark-border);
   border-radius: 12px;
   padding: 16px;
-  margin-bottom: 20px;
-}
-
-.transfer-modal-destination label {
-  display: block;
-  font-size: 0.75rem;
-  font-weight: 500;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  margin-bottom: 8px;
-}
-
-.transfer-modal-address {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.transfer-modal-address code {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 1rem;
-  color: var(--text-primary);
-  background: var(--dark-card);
-  padding: 8px 16px;
-  border-radius: 8px;
-  border: 1px solid var(--dark-border);
-}
-
-.transfer-modal-address--domain {
-  flex-direction: column;
-  gap: 4px;
-}
-
-.transfer-modal-domain {
-  font-size: 1.25rem;
-  font-weight: 600;
-  color: var(--cyber-green);
-}
-
-.transfer-modal-resolved {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  margin-top: 8px;
-}
-
-.transfer-modal-resolved-label {
-  font-size: 0.75rem;
-  color: var(--text-muted);
-}
-
-.transfer-modal-resolved code {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 0.85rem;
-  color: var(--text-secondary);
-}
-
-.transfer-modal-details {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-  margin-bottom: 20px;
-}
-
-.transfer-modal-detail {
-  background: var(--dark-bg);
-  border: 1px solid var(--dark-border);
-  border-radius: 8px;
-  padding: 12px;
-  text-align: center;
-}
-
-.transfer-modal-detail-label {
-  display: block;
-  font-size: 0.7rem;
-  font-weight: 500;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
   margin-bottom: 4px;
 }
 
-.transfer-modal-detail-value {
-  font-size: 0.95rem;
+.transfer-modal-section--address {
+  margin-top: 16px;
+  margin-bottom: 16px;
+}
+
+.transfer-modal-label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+}
+
+/* Input Row */
+.transfer-modal-input-row,
+.transfer-modal-output-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.transfer-modal-amount-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  font-size: 2rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-family: 'Inter', sans-serif;
+  outline: none;
+  width: 100%;
+  min-width: 0;
+}
+
+.transfer-modal-amount-input::placeholder {
+  color: var(--text-muted);
+}
+
+.transfer-modal-amount-input:disabled {
+  opacity: 0.7;
+}
+
+.transfer-modal-output-amount {
+  font-size: 2rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-family: 'Inter', sans-serif;
+}
+
+.transfer-modal-usd {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin-top: 8px;
+}
+
+/* Token Badge */
+.transfer-modal-token {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--dark-card);
+  border: 1px solid var(--dark-border);
+  border-radius: 24px;
+  padding: 8px 14px 8px 10px;
+  flex-shrink: 0;
+}
+
+.transfer-modal-token-icon {
+  width: 32px;
+  height: 32px;
+  background: linear-gradient(135deg, #9945FF 0%, #14F195 100%);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  color: white;
+  font-weight: bold;
+}
+
+.transfer-modal-token-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.transfer-modal-token-name {
+  font-size: 0.9rem;
   font-weight: 600;
   color: var(--text-primary);
 }
 
-.transfer-modal-detail-value--free {
-  color: var(--cyber-green);
+.transfer-modal-token-chain {
+  font-size: 0.7rem;
+  color: var(--text-muted);
 }
 
-.transfer-modal-badge {
-  grid-column: 1 / -1;
-  background: linear-gradient(135deg, rgba(255, 105, 180, 0.1) 0%, rgba(255, 182, 193, 0.1) 100%);
-  border: 1px solid var(--cyber-green);
-  border-radius: 8px;
-  padding: 8px 16px;
-  text-align: center;
-  font-size: 0.85rem;
-  font-weight: 500;
-  color: var(--cyber-green);
-}
-
-.transfer-modal-info {
+/* Arrow */
+.transfer-modal-arrow-container {
   display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  background: rgba(255, 105, 180, 0.05);
-  border: 1px solid rgba(255, 105, 180, 0.2);
-  border-radius: 8px;
-  padding: 12px;
-  font-size: 0.85rem;
+  justify-content: center;
+  margin: -8px 0;
+  position: relative;
+  z-index: 1;
+}
+
+.transfer-modal-arrow-icon {
+  width: 36px;
+  height: 36px;
+  background: var(--dark-card);
+  border: 1px solid var(--dark-border);
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+}
+
+/* Address Input */
+.transfer-modal-address-input {
+  width: 100%;
+  background: transparent;
+  border: none;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  font-family: 'JetBrains Mono', monospace;
+  outline: none;
+}
+
+.transfer-modal-address-input::placeholder {
+  color: var(--text-muted);
+}
+
+.transfer-modal-address-input:disabled {
+  opacity: 0.7;
+}
+
+/* Route Info */
+.transfer-modal-route {
+  background: linear-gradient(135deg, rgba(255, 105, 180, 0.08) 0%, rgba(147, 51, 234, 0.08) 100%);
+  border: 1px solid rgba(255, 105, 180, 0.3);
+  border-radius: 12px;
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.transfer-modal-route-badge {
+  background: var(--cyber-pink);
+  color: white;
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.transfer-modal-route-info {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex: 1;
+}
+
+.transfer-modal-route-hops,
+.transfer-modal-route-time,
+.transfer-modal-route-fee {
+  font-size: 0.8rem;
   color: var(--text-secondary);
 }
 
-.transfer-modal-info svg {
-  flex-shrink: 0;
-  color: var(--cyber-green);
-  margin-top: 2px;
+.transfer-modal-route-benefit {
+  font-size: 0.8rem;
+  color: var(--cyber-pink);
+  font-weight: 500;
 }
 
-.transfer-modal-footer {
+/* Warning */
+.transfer-modal-warning {
   display: flex;
-  gap: 12px;
-  padding: 20px 24px;
-  border-top: 1px solid var(--dark-border);
+  align-items: center;
+  gap: 8px;
+  background: rgba(251, 191, 36, 0.1);
+  border: 1px solid rgba(251, 191, 36, 0.3);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-top: 16px;
+  font-size: 0.8rem;
+  color: #FCD34D;
 }
 
-.transfer-modal-btn {
-  flex: 1;
-  padding: 14px 20px;
-  border-radius: 10px;
+.transfer-modal-warning svg {
+  flex-shrink: 0;
+}
+
+/* Footer */
+.transfer-modal-footer {
+  padding: 0 24px 24px;
+}
+
+.transfer-modal-proceed-btn {
+  width: 100%;
+  padding: 16px 24px;
+  border-radius: 12px;
   font-size: 1rem;
   font-weight: 600;
   cursor: pointer;
@@ -2104,40 +2154,26 @@ body {
   align-items: center;
   justify-content: center;
   gap: 8px;
-}
-
-.transfer-modal-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.transfer-modal-btn--cancel {
-  background: var(--dark-bg);
-  border: 1px solid var(--dark-border);
-  color: var(--text-secondary);
-}
-
-.transfer-modal-btn--cancel:hover:not(:disabled) {
-  background: var(--dark-card-hover);
-  color: var(--text-primary);
-}
-
-.transfer-modal-btn--confirm {
-  background: linear-gradient(135deg, var(--cyber-green) 0%, var(--cyber-green-dark) 100%);
+  background: linear-gradient(135deg, var(--cyber-pink) 0%, #9333EA 100%);
   border: none;
-  color: var(--dark-bg);
+  color: white;
 }
 
-.transfer-modal-btn--confirm:hover:not(:disabled) {
-  box-shadow: var(--glow-green);
+.transfer-modal-proceed-btn:hover:not(:disabled) {
+  box-shadow: 0 0 30px rgba(255, 105, 180, 0.4);
   transform: translateY(-1px);
 }
 
+.transfer-modal-proceed-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .transfer-modal-spinner {
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   border: 2px solid transparent;
-  border-top-color: var(--dark-bg);
+  border-top-color: white;
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
