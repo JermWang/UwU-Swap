@@ -987,25 +987,6 @@ Hold $UWU tokens for zero-fee transfers!`,
           )}
         </div>
 
-        {/* Features Section */}
-        <div className="swap-features">
-          <div className="swap-feature">
-            <img src="/branding/privacy_shield.png" alt="" className="swap-feature-bg" />
-            <h3>Privacy First</h3>
-            <p>Ephemeral wallets break the chain~</p>
-          </div>
-          <div className="swap-feature">
-            <img src="/branding/speed.png" alt="" className="swap-feature-bg" />
-            <h3>Fast Routing</h3>
-            <p>2-5 hops in seconds, nyoom~</p>
-          </div>
-          <div className="swap-feature">
-            <img src="/branding/token holder.png" alt="" className="swap-feature-bg" />
-            <h3>Hold $UWU</h3>
-            <p>Free transfers for holders~</p>
-          </div>
-        </div>
-
         </div>
 
       {/* Transfer Confirmation Modal */}
