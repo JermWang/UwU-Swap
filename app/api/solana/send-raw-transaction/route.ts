@@ -26,6 +26,7 @@ export async function POST(req: NextRequest) {
     const raw = String(body?.txBase64 ?? "").trim();
     const confirm = body?.confirm === true;
     const skipPreflight = body?.skipPreflight !== false;
+    const preferredRpcUrl = typeof body?.rpcUrl === "string" && body.rpcUrl.trim() ? body.rpcUrl.trim() : undefined;
     const minContextSlot =
       typeof body?.minContextSlot === "number" && Number.isFinite(body.minContextSlot)
         ? Math.floor(body.minContextSlot)
@@ -62,7 +63,10 @@ export async function POST(req: NextRequest) {
       return false;
     };
 
-    const urls = getRpcUrls();
+    const baseUrls = getRpcUrls();
+    const urls = preferredRpcUrl
+      ? [preferredRpcUrl, ...baseUrls.filter((u) => u !== preferredRpcUrl)]
+      : baseUrls;
     const maxAttempts = 2;
     let candidateSig = "";
 

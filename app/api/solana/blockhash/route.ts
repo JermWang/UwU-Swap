@@ -30,6 +30,7 @@ export async function GET() {
           blockhash: latest.value.blockhash,
           lastValidBlockHeight: latest.value.lastValidBlockHeight,
           minContextSlot: latest.context.slot,
+          rpcUrl: url,
         },
         { headers: { "Cache-Control": "no-store" } }
       );
