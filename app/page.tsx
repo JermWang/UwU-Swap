@@ -118,6 +118,7 @@ Hold $UWU tokens for zero-fee transfers!`,
   const lastSeenHopResultsRef = useRef<Set<string>>(new Set());
 
   const prevMessagesLength = useRef(1); // Start at 1 for welcome message
+  const lastFundingDiagRef = useRef<string | null>(null);
 
   const scrollToBottom = useCallback(() => {
     // Only scroll within the messages container, not the page
@@ -309,7 +310,37 @@ Hold $UWU tokens for zero-fee transfers!`,
           body: JSON.stringify({ id: input.planId, fundingSignature: input.fundingSignature }),
           cache: "no-store",
         });
-        await stepRes.json().catch(() => null);
+        const stepData = await stepRes.json().catch(() => null);
+
+        if (stepData && typeof stepData === "object") {
+          const stepStatus = String((stepData as any)?.status ?? "");
+          const funded = Boolean((stepData as any)?.funded ?? false);
+          if (stepStatus === "awaiting_funding" && !funded) {
+            const sig = typeof (stepData as any)?.fundingSignature === "string" ? (stepData as any).fundingSignature : "";
+            const sigStatus = (stepData as any)?.signatureStatus;
+
+            const balLamportsRaw = (stepData as any)?.balanceLamports;
+            const balCommitment = typeof (stepData as any)?.balanceCommitment === "string" ? (stepData as any).balanceCommitment : "";
+            const requiredRaw = (stepData as any)?.requiredLamports;
+
+            const diagParts: string[] = [];
+            if (sig) {
+              const conf = typeof sigStatus?.confirmationStatus === "string" ? sigStatus.confirmationStatus : "unknown";
+              const err = sigStatus?.err ? JSON.stringify(sigStatus.err) : "";
+              diagParts.push(`Funding TX: \`${sig.slice(0, 10)}...\` (status: ${conf}${err ? `, err: ${err}` : ""})`);
+            }
+
+            if (balLamportsRaw != null && requiredRaw != null) {
+              diagParts.push(`Deposit balance: ${String(balLamportsRaw)} / ${String(requiredRaw)} lamports (${balCommitment || ""})`);
+            }
+
+            const diag = diagParts.join("\n").trim();
+            if (diag && lastFundingDiagRef.current !== diag) {
+              lastFundingDiagRef.current = diag;
+              addMessage("system", diag);
+            }
+          }
+        }
 
         const statusRes = await fetch(`/api/transfer/status?id=${encodeURIComponent(input.planId)}`, { cache: "no-store" });
         const statusData = await statusRes.json();
