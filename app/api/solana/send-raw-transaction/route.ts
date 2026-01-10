@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import bs58 from "bs58";
 import { Connection, Transaction } from "@solana/web3.js";
 
-import { confirmSignatureViaRpc, getConnectionForRpcUrl, getRpcUrls, getServerCommitment, withRetry } from "../../../lib/rpc";
+import { getConnectionForRpcUrl, getRpcUrls, getServerCommitment, withRetry } from "../../../lib/rpc";
 import { getSafeErrorMessage } from "../../../lib/safeError";
 
 export const runtime = "nodejs";
@@ -63,7 +63,7 @@ export async function POST(req: NextRequest) {
     };
 
     const urls = getRpcUrls();
-    const maxAttempts = 4;
+    const maxAttempts = 2;
     let candidateSig = "";
 
     // Try to extract the signature from the signed tx for fallback confirmation
@@ -94,8 +94,15 @@ export async function POST(req: NextRequest) {
           );
 
           if (confirm) {
-            await withTimeout(confirmSignatureViaRpc(connection, signature, finality), 20_000);
-            return NextResponse.json({ signature, confirmed: true }, { headers: { "Cache-Control": "no-store" } });
+            try {
+              const ok = await withTimeout(tryConfirmCandidateSigFast(connection, signature), 6_000);
+              if (ok) {
+                return NextResponse.json({ signature, confirmed: true }, { headers: { "Cache-Control": "no-store" } });
+              }
+            } catch {
+              // Best-effort only; we'll return the signature and let the client/server polling confirm later.
+            }
+            return NextResponse.json({ signature, confirmed: false }, { headers: { "Cache-Control": "no-store" } });
           }
 
           return NextResponse.json({ signature, confirmed: false }, { headers: { "Cache-Control": "no-store" } });

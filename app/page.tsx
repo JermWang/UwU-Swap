@@ -578,7 +578,6 @@ Hold $UWU tokens for zero-fee transfers!`,
           body: JSON.stringify({
             txBase64: bytesToBase64(signedTx.serialize()),
             minContextSlot: typeof bh?.minContextSlot === "number" ? bh.minContextSlot : undefined,
-            confirm: true,
             skipPreflight: false,
           }),
           cache: "no-store",
