@@ -21,11 +21,12 @@ import {
 } from "./lib/uwuChat";
 import TransferModal, { TransferModalData } from "./components/TransferModal";
 
-function bytesToBase64(bytes: Uint8Array): string {
+function bytesToBase64(bytes: ArrayLike<number> | Uint8Array): string {
+  const u8 = bytes instanceof Uint8Array ? bytes : Uint8Array.from(bytes as any);
   let binary = "";
   const chunkSize = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  for (let i = 0; i < u8.length; i += chunkSize) {
+    binary += String.fromCharCode(...u8.subarray(i, i + chunkSize));
   }
   return window.btoa(binary);
 }
@@ -40,14 +41,22 @@ type TransferState = {
 };
 
 type QuickSendState = {
-  status: "idle" | "awaiting_deposit" | "deposit_detected" | "routing" | "complete" | "failed";
+  status: "awaiting_deposit" | "routing" | "complete" | "failed";
+  planId: string;
   depositAddress: string;
   destinationAddress: string;
   amount: number;
+  netAmount?: number;
+  feeApplied?: boolean;
+  feeSol?: number;
   hopCount: number;
   currentHop: number;
   startTime: number;
   estimatedArrival: number;
+  fundingExpiresAtUnixMs?: number;
+  requiredLamports?: string;
+  depositBalanceLamports?: string;
+  lastError?: string;
   txSignature?: string;
 };
 
@@ -79,8 +88,6 @@ export default function Home() {
   const { publicKey, signTransaction, connected } = useWallet();
   const { setVisible } = useWalletModal();
 
-  const quickSendEnabled = String(process.env.NEXT_PUBLIC_QUICK_SEND_ENABLED ?? "").trim() === "true";
-
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: "welcome",
@@ -102,9 +109,10 @@ Hold $UWU tokens for zero-fee transfers!`,
   const [isProcessing, setIsProcessing] = useState(false);
   const [transferState, setTransferState] = useState<TransferState | null>(null);
   const [balanceInfo, setBalanceInfo] = useState<{ sol: number; hasShip: boolean } | null>(null);
-  const [swapMode, setSwapMode] = useState<"custodial" | "non-custodial">("custodial");
+  const [swapMode, setSwapMode] = useState<"custodial" | "non-custodial">("non-custodial");
   const [quickSendState, setQuickSendState] = useState<QuickSendState | null>(null);
   const [quickSendForm, setQuickSendForm] = useState({ destination: "", amount: "" });
+  const [isQuickSendLoading, setIsQuickSendLoading] = useState(false);
   const [elapsedTime, setElapsedTime] = useState(0);
   const [transferModalData, setTransferModalData] = useState<TransferModalData | null>(null);
   const [isModalSigning, setIsModalSigning] = useState(false);
@@ -116,6 +124,8 @@ Hold $UWU tokens for zero-fee transfers!`,
 
   const transferPollIntervalRef = useRef<number | null>(null);
   const lastSeenHopResultsRef = useRef<Set<string>>(new Set());
+
+  const quickSendPollIntervalRef = useRef<number | null>(null);
 
   const prevMessagesLength = useRef(1); // Start at 1 for welcome message
   const lastFundingDiagRef = useRef<string | null>(null);
@@ -173,7 +183,7 @@ Hold $UWU tokens for zero-fee transfers!`,
 
   // Timer for elapsed time during transfer
   useEffect(() => {
-    if (quickSendState && quickSendState.status !== "idle" && quickSendState.status !== "complete" && quickSendState.status !== "failed") {
+    if (quickSendState && quickSendState.status !== "complete" && quickSendState.status !== "failed") {
       const interval = setInterval(() => {
         setElapsedTime(Math.floor((Date.now() - quickSendState.startTime) / 1000));
       }, 1000);
@@ -181,57 +191,33 @@ Hold $UWU tokens for zero-fee transfers!`,
     }
   }, [quickSendState]);
 
-  const handleGenerateDepositAddress = () => {
-    if (!quickSendForm.destination || !quickSendForm.amount) return;
-    
-    // Demo: Generate a fake deposit address and start tracking
-    const demoDepositAddress = "UwU" + Math.random().toString(36).slice(2, 10) + "...demo";
-    setQuickSendState({
-      status: "awaiting_deposit",
-      depositAddress: demoDepositAddress,
-      destinationAddress: quickSendForm.destination,
-      amount: parseFloat(quickSendForm.amount),
-      hopCount: 3,
-      currentHop: 0,
-      startTime: Date.now(),
-      estimatedArrival: Date.now() + 45000, // 45 seconds estimate
-    });
-    setElapsedTime(0);
-  };
+  const stopQuickSendPolling = useCallback(() => {
+    if (quickSendPollIntervalRef.current != null) {
+      window.clearInterval(quickSendPollIntervalRef.current);
+      quickSendPollIntervalRef.current = null;
+    }
+  }, []);
 
-  const simulateTransferProgress = () => {
-    if (!quickSendState) return;
-    
-    // Demo: Simulate deposit detection
-    setQuickSendState(prev => prev ? { ...prev, status: "deposit_detected", currentHop: 0 } : null);
-    
-    // Simulate routing through hops
-    setTimeout(() => {
-      setQuickSendState(prev => prev ? { ...prev, status: "routing", currentHop: 1 } : null);
-    }, 2000);
-    
-    setTimeout(() => {
-      setQuickSendState(prev => prev ? { ...prev, currentHop: 2 } : null);
-    }, 4000);
-    
-    setTimeout(() => {
-      setQuickSendState(prev => prev ? { ...prev, currentHop: 3 } : null);
-    }, 6000);
-    
-    setTimeout(() => {
-      setQuickSendState(prev => prev ? { 
-        ...prev, 
-        status: "complete",
-        txSignature: "demo" + Math.random().toString(36).slice(2, 12)
-      } : null);
-    }, 8000);
-  };
+  useEffect(() => {
+    return () => stopQuickSendPolling();
+  }, [stopQuickSendPolling]);
 
-  const resetQuickSend = () => {
+  const resetQuickSend = useCallback(() => {
+    stopQuickSendPolling();
     setQuickSendState(null);
     setQuickSendForm({ destination: "", amount: "" });
     setElapsedTime(0);
-  };
+  }, [stopQuickSendPolling]);
+
+  const copyToClipboard = useCallback(async (text: string) => {
+    const t = String(text ?? "");
+    if (!t) return;
+    try {
+      await navigator.clipboard.writeText(t);
+    } catch {
+      // ignore
+    }
+  }, []);
 
   const formatElapsedTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -245,6 +231,168 @@ Hold $UWU tokens for zero-fee transfers!`,
     if (remaining <= 0) return "Any moment...";
     return `~${remaining}s`;
   };
+
+  const formatExpiresIn = (expiresAtUnixMs?: number) => {
+    if (!expiresAtUnixMs || !Number.isFinite(expiresAtUnixMs)) return "—";
+    const ms = Math.max(0, expiresAtUnixMs - Date.now());
+    const sec = Math.floor(ms / 1000);
+    const mins = Math.floor(sec / 60);
+    const secs = sec % 60;
+    return `${mins}:${secs.toString().padStart(2, "0")}`;
+  };
+
+  const startQuickSendPolling = useCallback(
+    (input: { planId: string }) => {
+      stopQuickSendPolling();
+
+      const pollOnce = async () => {
+        const stepRes = await fetch("/api/transfer/step", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: input.planId }),
+          cache: "no-store",
+        });
+        const stepData = await stepRes.json().catch(() => null);
+
+        const statusRes = await fetch(`/api/transfer/status?id=${encodeURIComponent(input.planId)}`, { cache: "no-store" });
+        const statusData = await statusRes.json().catch(() => null);
+
+        const serverStatus = String(statusData?.status ?? stepData?.status ?? "");
+
+        if (statusData?.error || stepData?.error) {
+          const errMsg = String(statusData?.error ?? stepData?.error ?? "Transfer failed");
+          setQuickSendState((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  status: "failed",
+                  lastError: errMsg,
+                }
+              : null
+          );
+          stopQuickSendPolling();
+          return;
+        }
+
+        const hopCount = Number(statusData?.plan?.hopCount ?? 0);
+        const currentHop = Number(statusData?.state?.currentHop ?? 0);
+        const finalSig = typeof statusData?.state?.finalSignature === "string" ? statusData.state.finalSignature : "";
+
+        const expiresAt = Number(statusData?.plan?.fundingExpiresAtUnixMs ?? 0);
+
+        const funded = Boolean(stepData?.funded ?? false);
+        const awaitingFunding = serverStatus === "awaiting_funding" && !funded;
+
+        const nextStatus: QuickSendState["status"] =
+          serverStatus === "complete" ? "complete" : serverStatus === "failed" ? "failed" : serverStatus === "routing" ? "routing" : "awaiting_deposit";
+
+        setQuickSendState((prev) => {
+          if (!prev) return prev;
+
+          const next: QuickSendState = {
+            ...prev,
+            status: nextStatus,
+            hopCount: hopCount || prev.hopCount,
+            currentHop,
+            fundingExpiresAtUnixMs: expiresAt || prev.fundingExpiresAtUnixMs,
+            txSignature: finalSig || prev.txSignature,
+          };
+
+          if (awaitingFunding) {
+            if (stepData?.requiredLamports != null) next.requiredLamports = String(stepData.requiredLamports);
+            if (stepData?.balanceLamports != null) next.depositBalanceLamports = String(stepData.balanceLamports);
+          }
+
+          if (nextStatus === "failed") {
+            next.lastError = String(statusData?.state?.lastError ?? prev.lastError ?? "Transfer failed");
+          }
+
+          return next;
+        });
+
+        if (serverStatus === "complete" || serverStatus === "failed") {
+          stopQuickSendPolling();
+        }
+      };
+
+      pollOnce().catch(() => null);
+      quickSendPollIntervalRef.current = window.setInterval(() => {
+        pollOnce().catch(() => null);
+      }, 2200);
+    },
+    [stopQuickSendPolling]
+  );
+
+  const handleGenerateDepositAddress = useCallback(async () => {
+    const destination = String(quickSendForm.destination ?? "").trim();
+    const amount = Number(quickSendForm.amount);
+    if (!destination || !Number.isFinite(amount) || amount <= 0) return;
+
+    setIsQuickSendLoading(true);
+    stopQuickSendPolling();
+
+    try {
+      const planRes = await fetch("/api/transfer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          toWallet: destination,
+          amountSol: amount,
+          asset: null,
+          mode: "non_custodial",
+        }),
+        cache: "no-store",
+      });
+
+      const planData = await planRes.json().catch(() => null);
+      if (!planRes.ok || !planData || typeof planData !== "object" || planData?.error) {
+        const msg = String(planData?.error ?? "Failed to create deposit address");
+        setQuickSendState({
+          status: "failed",
+          planId: "",
+          depositAddress: "",
+          destinationAddress: destination,
+          amount,
+          hopCount: 0,
+          currentHop: 0,
+          startTime: Date.now(),
+          estimatedArrival: Date.now(),
+          lastError: msg,
+        });
+        return;
+      }
+
+      const planId = String(planData.id ?? "");
+      const depositAddress = String(planData.firstBurnerPubkey ?? "");
+      const hopCount = Number(planData.hopCount ?? 0);
+      const estMs = Number(planData.estimatedCompletionMs ?? 0);
+      const expiresAt = Number(planData.fundingExpiresAtUnixMs ?? 0);
+      const feeSol = lamportsToSol(BigInt(String(planData.feeLamports ?? "0")));
+      const feeApplied = Boolean(planData.feeApplied);
+      const netAmount = Math.max(0, amount - (feeApplied ? feeSol : 0));
+
+      setQuickSendState({
+        status: "awaiting_deposit",
+        planId,
+        depositAddress,
+        destinationAddress: String(planData.resolvedToWallet ?? destination),
+        amount,
+        netAmount,
+        feeApplied,
+        feeSol,
+        hopCount,
+        currentHop: 0,
+        startTime: Date.now(),
+        estimatedArrival: Date.now() + (Number.isFinite(estMs) && estMs > 0 ? estMs : 0),
+        fundingExpiresAtUnixMs: Number.isFinite(expiresAt) && expiresAt > 0 ? expiresAt : undefined,
+      });
+
+      setElapsedTime(0);
+      startQuickSendPolling({ planId });
+    } finally {
+      setIsQuickSendLoading(false);
+    }
+  }, [quickSendForm.amount, quickSendForm.destination, startQuickSendPolling, stopQuickSendPolling]);
 
   const fetchBalance = async (wallet: string) => {
     try {
@@ -775,16 +923,16 @@ Hold $UWU tokens for zero-fee transfers!`,
             <h2 className="swap-card-title">{effectiveSwapMode === "custodial" ? "AI Assisted" : "Non-Custodial"}</h2>
             <div className="swap-mode-tabs">
               <button
-                className={`swap-mode-tab ${swapMode === "custodial" ? "swap-mode-tab--active" : ""}`}
-                onClick={() => setSwapMode("custodial")}
-              >
-                AI Assisted
-              </button>
-              <button
                 className={`swap-mode-tab ${swapMode === "non-custodial" ? "swap-mode-tab--active" : ""}`}
                 onClick={() => setSwapMode("non-custodial")}
               >
                 Non-Custodial
+              </button>
+              <button
+                className={`swap-mode-tab ${swapMode === "custodial" ? "swap-mode-tab--active" : ""}`}
+                onClick={() => setSwapMode("custodial")}
+              >
+                AI Assisted
               </button>
             </div>
             </div>
@@ -886,6 +1034,7 @@ Hold $UWU tokens for zero-fee transfers!`,
                         placeholder="Where should we send the funds?"
                         value={quickSendForm.destination}
                         onChange={(e) => setQuickSendForm(prev => ({ ...prev, destination: e.target.value }))}
+                        disabled={isQuickSendLoading}
                       />
                     </div>
                     <div className="swap-noncustodial-field">
@@ -898,14 +1047,15 @@ Hold $UWU tokens for zero-fee transfers!`,
                         min="0"
                         value={quickSendForm.amount}
                         onChange={(e) => setQuickSendForm(prev => ({ ...prev, amount: e.target.value }))}
+                        disabled={isQuickSendLoading}
                       />
                     </div>
                     <button 
                       className="swap-send-btn"
                       onClick={handleGenerateDepositAddress}
-                      disabled={!quickSendForm.destination || !quickSendForm.amount}
+                      disabled={isQuickSendLoading || !quickSendForm.destination || !quickSendForm.amount}
                     >
-                      Generate Deposit Address
+                      {isQuickSendLoading ? "Creating..." : "Generate Deposit Address"}
                     </button>
                   </div>
                   <div className="swap-noncustodial-steps">
@@ -943,7 +1093,7 @@ Hold $UWU tokens for zero-fee transfers!`,
                     <label>Send {quickSendState.amount} SOL to:</label>
                     <div className="swap-tracking-address">
                       <code>{quickSendState.depositAddress}</code>
-                      <button className="swap-copy-btn" title="Copy address">📋</button>
+                      <button className="swap-copy-btn" title="Copy address" onClick={() => copyToClipboard(quickSendState.depositAddress)}>📋</button>
                     </div>
                   </div>
 
@@ -956,15 +1106,35 @@ Hold $UWU tokens for zero-fee transfers!`,
                       <span>Amount</span>
                       <span>{quickSendState.amount} SOL</span>
                     </div>
+                    {quickSendState.feeApplied && typeof quickSendState.feeSol === "number" && (
+                      <div className="swap-tracking-row">
+                        <span>Fee</span>
+                        <span>{quickSendState.feeSol.toFixed(6)} SOL</span>
+                      </div>
+                    )}
+                    {typeof quickSendState.netAmount === "number" && (
+                      <div className="swap-tracking-row">
+                        <span>Net to destination</span>
+                        <span>{quickSendState.netAmount.toFixed(6)} SOL</span>
+                      </div>
+                    )}
+                    {quickSendState.depositBalanceLamports && quickSendState.requiredLamports && (
+                      <div className="swap-tracking-row">
+                        <span>Deposit balance</span>
+                        <span>{quickSendState.depositBalanceLamports} / {quickSendState.requiredLamports} lamports</span>
+                      </div>
+                    )}
+                    {quickSendState.fundingExpiresAtUnixMs && (
+                      <div className="swap-tracking-row">
+                        <span>Deposit expires in</span>
+                        <span>{formatExpiresIn(quickSendState.fundingExpiresAtUnixMs)}</span>
+                      </div>
+                    )}
                     <div className="swap-tracking-row">
                       <span>Est. Arrival</span>
                       <span>{getEstimatedRemaining()}</span>
                     </div>
                   </div>
-
-                  <button className="swap-send-btn swap-send-btn--secondary" onClick={simulateTransferProgress}>
-                    🔄 Simulate Deposit (Demo)
-                  </button>
                   <button className="swap-cancel-btn" onClick={resetQuickSend}>
                     Cancel
                   </button>
@@ -972,12 +1142,12 @@ Hold $UWU tokens for zero-fee transfers!`,
               )}
 
               {/* Tracking State - Routing */}
-              {quickSendState && (quickSendState.status === "deposit_detected" || quickSendState.status === "routing") && (
+              {quickSendState && quickSendState.status === "routing" && (
                 <div className="swap-tracking">
                   <div className="swap-tracking-header">
                     <div className="swap-tracking-status swap-tracking-status--routing">
                       <span className="swap-tracking-pulse swap-tracking-pulse--active"></span>
-                      {quickSendState.status === "deposit_detected" ? "Deposit Detected!" : "Routing..."}
+                      Routing...
                     </div>
                     <div className="swap-tracking-timer">{formatElapsedTime(elapsedTime)}</div>
                   </div>
@@ -1045,6 +1215,19 @@ Hold $UWU tokens for zero-fee transfers!`,
                     )}
                   </div>
 
+                  <button className="swap-send-btn" onClick={resetQuickSend}>
+                    New Transfer
+                  </button>
+                </div>
+              )}
+
+              {quickSendState && quickSendState.status === "failed" && (
+                <div className="swap-tracking swap-tracking--complete">
+                  <div className="swap-tracking-success">
+                    <div className="swap-tracking-success-icon">❌</div>
+                    <h3>Transfer Failed</h3>
+                    <p>{quickSendState.lastError || "Transfer failed"}</p>
+                  </div>
                   <button className="swap-send-btn" onClick={resetQuickSend}>
                     New Transfer
                   </button>
