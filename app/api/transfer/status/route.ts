@@ -30,6 +30,7 @@ export async function GET(req: NextRequest) {
         netAmountLamports: data?.plan?.netAmountLamports,
         hopCount: data?.plan?.hopCount,
         estimatedCompletionMs: data?.plan?.estimatedCompletionMs,
+        fundingExpiresAtUnixMs: (data as any)?.plan?.fundingExpiresAtUnixMs,
         feeApplied: data?.plan?.feeApplied,
         feeLamports: data?.plan?.feeLamports,
         firstBurnerPubkey: data?.plan?.burners?.[0]?.address,

@@ -9,6 +9,17 @@ const TOKEN_PROGRAM_ID = new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ
 const TOKEN_2022_PROGRAM_ID = new PublicKey("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb");
 const ASSOCIATED_TOKEN_PROGRAM_ID = new PublicKey("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
 
+const MEMO_PROGRAM_ID = new PublicKey("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr");
+
+function buildMemoIx(memo: string): TransactionInstruction {
+  const data = Buffer.from(String(memo ?? ""), "utf8");
+  return new TransactionInstruction({
+    programId: MEMO_PROGRAM_ID,
+    keys: [],
+    data,
+  });
+}
+
 function buildCloseTokenAccountIx(input: { tokenAccount: PublicKey; destination: PublicKey; owner: PublicKey }): TransactionInstruction {
   return new TransactionInstruction({
     programId: TOKEN_PROGRAM_ID,
@@ -19,6 +30,52 @@ function buildCloseTokenAccountIx(input: { tokenAccount: PublicKey; destination:
     ],
     data: Buffer.from([9]),
   });
+}
+
+export async function findRecentMemoSignature(input: {
+  connection: Connection;
+  address: PublicKey;
+  memo: string;
+  limit?: number;
+}): Promise<string | null> {
+  const { connection, address } = input;
+  const memo = String(input.memo ?? "");
+  if (!memo) return null;
+
+  const limit = Math.max(1, Math.min(50, Number(input.limit ?? 20) || 20));
+  const c = getServerCommitment();
+  const finality: Finality = c === "finalized" ? "finalized" : "confirmed";
+
+  const sigs = await withRetry(() => connection.getSignaturesForAddress(address, { limit }, finality));
+  for (const s of sigs) {
+    const sig = String(s.signature ?? "").trim();
+    if (!sig) continue;
+    if (s.err) continue;
+
+    const tx = await withRetry(() => connection.getParsedTransaction(sig, { maxSupportedTransactionVersion: 0, commitment: finality }));
+    const ixs: any[] = (tx as any)?.transaction?.message?.instructions ?? [];
+    for (const ix of ixs) {
+      const program = String(ix?.program ?? "").toLowerCase();
+      const programId = String(ix?.programId ?? "");
+      const isMemoProgram = program.includes("memo") || programId === MEMO_PROGRAM_ID.toBase58();
+      if (!isMemoProgram) continue;
+
+      const parsed = ix?.parsed;
+      const parsedMemo = parsed?.info?.memo;
+      if (typeof parsedMemo === "string" && parsedMemo === memo) return sig;
+
+      const data = ix?.data;
+      if (typeof data === "string" && data.length) {
+        if (data === memo) return sig;
+        try {
+          const decoded = Buffer.from(bs58.decode(data)).toString("utf8");
+          if (decoded === memo) return sig;
+        } catch {}
+      }
+    }
+  }
+
+  return null;
 }
 
 export async function getTokenProgramIdForMint(input: { connection: Connection; mint: PublicKey }): Promise<PublicKey> {
@@ -60,9 +117,9 @@ export function buildCreateAssociatedTokenAccountIdempotentInstruction(input: {
   return { ix, ata };
 }
 
-function u64le(n: bigint): Buffer {
-  const b = Buffer.alloc(8);
-  b.writeBigUInt64LE(BigInt(n), 0);
+function u64leBytes(n: bigint): Uint8Array {
+  const b = new Uint8Array(8);
+  new DataView(b.buffer).setBigUint64(0, BigInt(n), true);
   return b;
 }
 
@@ -76,7 +133,9 @@ export function buildSplTokenTransferInstruction(input: {
   const tokenProgram = input.tokenProgram ?? TOKEN_PROGRAM_ID;
   const amountRaw = BigInt(input.amountRaw);
   if (amountRaw <= 0n) throw new Error("amountRaw must be > 0");
-  const data = Buffer.concat([Buffer.from([3]), u64le(amountRaw)]);
+  const data = Buffer.alloc(9);
+  data[0] = 3;
+  data.set(u64leBytes(amountRaw), 1);
   return new TransactionInstruction({
     programId: tokenProgram,
     keys: [
@@ -133,6 +192,7 @@ export async function transferSplTokensFromPrivyWallet(opts: {
   toOwner: PublicKey;
   amountRaw: bigint;
   tokenProgram?: PublicKey;
+  memo?: string;
 }): Promise<{ signature: string; amountRaw: bigint }> {
   const { connection, mint, fromOwner, toOwner } = opts;
   const amountRaw = BigInt(opts.amountRaw);
@@ -149,6 +209,7 @@ export async function transferSplTokensFromPrivyWallet(opts: {
   const tx = new Transaction();
   tx.feePayer = payer;
   tx.add(createIx);
+  if (opts.memo) tx.add(buildMemoIx(String(opts.memo)));
   tx.add(transferIx);
 
   const signature = await privySignAndSendViaRpc({
@@ -669,6 +730,7 @@ export async function transferLamportsFromPrivyWallet(opts: {
   fromPubkey: PublicKey;
   to: PublicKey;
   lamports: number;
+  memo?: string;
 }): Promise<{ signature: string; amountLamports: number }> {
   const { connection, fromPubkey, to } = opts;
   const lamports = Number(opts.lamports);
@@ -684,6 +746,7 @@ export async function transferLamportsFromPrivyWallet(opts: {
   tx.recentBlockhash = blockhash;
   tx.lastValidBlockHeight = lastValidBlockHeight;
   tx.feePayer = feePayer ? feePayer.publicKey : fromPubkey;
+  if (opts.memo) tx.add(buildMemoIx(String(opts.memo)));
   tx.add(
     SystemProgram.transfer({
       fromPubkey,

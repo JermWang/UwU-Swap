@@ -45,6 +45,8 @@ export type UwuPrivyTransferData = {
     burners: PrivyBurnerWallet[];
     hopDelaysMs: number[];
     estimatedCompletionMs: number;
+    finalNotBeforeUnixMs: number;
+    fundingExpiresAtUnixMs: number;
     feeApplied: boolean;
     feeLamports: string;
     createdAtUnix: number;
@@ -78,12 +80,19 @@ export async function createPrivyRoutingPlan(input: {
   const amountLamports = BigInt(input.amountLamports);
 
   const id = uuidv4();
-  const fromPubkey = new PublicKey(fromWallet);
+  const hasFromWallet = String(fromWallet ?? "").trim().length > 0;
+  const fromPubkey = hasFromWallet ? new PublicKey(fromWallet) : null;
   new PublicKey(toWallet);
 
-  const isUwuHolder = await checkUwuTokenHolder(connection, fromPubkey);
+  const isUwuHolder = fromPubkey ? await checkUwuTokenHolder(connection, fromPubkey) : false;
   const feeLamports = calculateFee(amountLamports, !isUwuHolder);
   const netAmountLamports = amountLamports - feeLamports;
+
+  if (netAmountLamports <= 0n) {
+    throw new Error("Amount too small after fees");
+  }
+
+  const feeApplied = !isUwuHolder && feeLamports > 0n;
 
   if (feeLamports > 0n) {
     const treasury = getTreasuryWallet();
@@ -112,6 +121,8 @@ export async function createPrivyRoutingPlan(input: {
   const hopExecutionTime = totalDelayMs + hopCount * 2000;
   const randomMinTime = MIN_TRANSFER_TIME_MS + Math.random() * (MAX_TRANSFER_TIME_MS - MIN_TRANSFER_TIME_MS);
   const estimatedCompletionMs = Math.max(hopExecutionTime, randomMinTime);
+  const finalNotBeforeUnixMs = Date.now() + randomMinTime;
+  const fundingExpiresAtUnixMs = Date.now() + 30 * 60 * 1000;
   const nowUnix = Math.floor(Date.now() / 1000);
   const feeCollected = feeLamports === 0n;
 
@@ -127,7 +138,9 @@ export async function createPrivyRoutingPlan(input: {
       burners,
       hopDelaysMs,
       estimatedCompletionMs,
-      feeApplied: !isUwuHolder,
+      finalNotBeforeUnixMs,
+      fundingExpiresAtUnixMs,
+      feeApplied,
       feeLamports: feeLamports.toString(),
       createdAtUnix: nowUnix,
     },

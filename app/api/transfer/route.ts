@@ -14,12 +14,10 @@ export const runtime = "nodejs";
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { fromWallet, toWallet, amountSol, asset } = body;
+    const { fromWallet, toWallet, amountSol, asset, mode } = body;
 
     // Validate inputs
-    if (!fromWallet || typeof fromWallet !== "string") {
-      return NextResponse.json({ error: "Missing fromWallet" }, { status: 400 });
-    }
+    const hasFromWallet = typeof fromWallet === "string" && fromWallet.trim().length > 0;
     if (!toWallet || typeof toWallet !== "string") {
       return NextResponse.json({ error: "Missing toWallet" }, { status: 400 });
     }
@@ -29,11 +27,15 @@ export async function POST(req: NextRequest) {
 
     const connection = getConnection();
 
-    // Validate fromWallet and resolve destination (supports .sol domains)
-    try {
-      new PublicKey(fromWallet);
-    } catch {
-      return NextResponse.json({ error: "Invalid fromWallet" }, { status: 400 });
+    // Validate fromWallet (optional for non-custodial deposit flow)
+    if (hasFromWallet) {
+      try {
+        new PublicKey(fromWallet);
+      } catch {
+        return NextResponse.json({ error: "Invalid fromWallet" }, { status: 400 });
+      }
+    } else if (String(mode ?? "").toLowerCase() !== "non_custodial") {
+      return NextResponse.json({ error: "Missing fromWallet" }, { status: 400 });
     }
 
     const resolved = await resolveAddressOrDomain(toWallet, connection);
@@ -47,7 +49,7 @@ export async function POST(req: NextRequest) {
     // Create a Privy-managed routing plan (burner keys never leave Privy)
     const data = await createPrivyRoutingPlan({
       connection,
-      fromWallet,
+      fromWallet: hasFromWallet ? String(fromWallet) : "",
       toWallet: resolved.pubkey.toBase58(),
       asset: transferAsset,
       amountLamports,
@@ -65,6 +67,7 @@ export async function POST(req: NextRequest) {
       id: data.plan.id,
       hopCount: data.plan.hopCount,
       estimatedCompletionMs: data.plan.estimatedCompletionMs,
+      fundingExpiresAtUnixMs: data.plan.fundingExpiresAtUnixMs,
       feeApplied: data.plan.feeApplied,
       feeLamports: data.plan.feeLamports,
       firstBurnerPubkey: data.plan.burners[0]?.address,

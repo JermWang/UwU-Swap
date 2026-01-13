@@ -8,6 +8,7 @@ import type { UwuPrivyTransferData } from "../../../lib/uwuPrivyRouter";
 import { MIN_TRANSFER_TIME_MS, MAX_TRANSFER_TIME_MS } from "../../../lib/uwuPrivyRouter";
 import { getTreasuryWallet } from "../../../lib/uwuRouter";
 import {
+  findRecentMemoSignature,
   findRecentSplTransferSignature,
   findRecentSystemTransferSignature,
   getTokenBalanceForMint,
@@ -95,9 +96,12 @@ async function reconcileStaleInFlight(opts: { connection: Connection; id: string
 
     const burner0 = plan.burners[0];
     const from = new PublicKey(burner0.address);
+
+    const memo = `uwuswap:${id}:fee`;
     const sig =
       plan.asset === "SOL"
-        ? await findRecentSystemTransferSignature({ connection, fromPubkey: from, toPubkey: treasury, lamports: Number(feeLamports), limit: 20 })
+        ? (await findRecentMemoSignature({ connection, address: from, memo, limit: 30 })) ||
+          (await findRecentSystemTransferSignature({ connection, fromPubkey: from, toPubkey: treasury, lamports: Number(feeLamports), limit: 20 }))
         : await findRecentSplTransferSignature({
             connection,
             fromOwner: from,
@@ -145,9 +149,12 @@ async function reconcileStaleInFlight(opts: { connection: Connection; id: string
     const from = new PublicKey(plan.burners[idx].address);
     const to = idx === hopCount - 1 ? new PublicKey(plan.toWallet) : new PublicKey(plan.burners[idx + 1].address);
 
+    const memo = `uwuswap:${id}:hop:${idx}`;
+
     const sig =
       plan.asset === "SOL"
-        ? await findRecentSystemTransferSignature({ connection, fromPubkey: from, toPubkey: to, lamports: Number(netLamports), limit: 20 })
+        ? (await findRecentMemoSignature({ connection, address: from, memo, limit: 30 })) ||
+          (await findRecentSystemTransferSignature({ connection, fromPubkey: from, toPubkey: to, lamports: Number(netLamports), limit: 20 }))
         : await findRecentSplTransferSignature({
             connection,
             fromOwner: from,
@@ -227,6 +234,21 @@ export async function POST(req: NextRequest) {
     if (refreshed.status === "awaiting_funding" && !state.funded) {
       const burner0 = plan.burners?.[0];
       if (!burner0?.address) return NextResponse.json({ error: "Missing routing account" }, { status: 500 });
+
+      const expiresAt = Number((plan as any)?.fundingExpiresAtUnixMs ?? 0);
+      if (expiresAt > 0 && Date.now() > expiresAt) {
+        await mutateUwuTransfer<UwuPrivyTransferData>({
+          id,
+          mutate: (r) => ({
+            status: "failed",
+            data: {
+              ...r.data,
+              state: { ...r.data.state, lastError: "Funding window expired. Please restart the transfer." },
+            },
+          }),
+        });
+        return NextResponse.json({ ok: true, id, status: "failed" });
+      }
 
       const sig = fundingSignature || state.fundingSignature;
       const now = Date.now();
@@ -376,6 +398,8 @@ export async function POST(req: NextRequest) {
       const burner0 = plan.burners[0];
       const fromPubkey = new PublicKey(burner0.address);
 
+      const memo = `uwuswap:${id}:fee`;
+
       const sent =
         plan.asset === "SOL"
           ? await transferLamportsFromPrivyWallet({
@@ -384,6 +408,7 @@ export async function POST(req: NextRequest) {
               fromPubkey,
               to: treasury,
               lamports: Number(feeLamports),
+              memo,
             })
           : await transferSplTokensFromPrivyWallet({
               connection,
@@ -392,6 +417,7 @@ export async function POST(req: NextRequest) {
               fromOwner: fromPubkey,
               toOwner: treasury,
               amountRaw: feeLamports,
+              memo,
             });
 
       await mutateUwuTransfer<UwuPrivyTransferData>({
@@ -434,31 +460,35 @@ export async function POST(req: NextRequest) {
 
     // TIMING OBFUSCATION: Delay final distribution until minimum time has passed
     if (isFinalHop) {
-      const createdAtMs = Number(plan.createdAtUnix || 0) * 1000;
-      const elapsedMs = Date.now() - createdAtMs;
-      
-      // Random target time between MIN and MAX (2-5 minutes)
-      const targetTimeMs = MIN_TRANSFER_TIME_MS + Math.random() * (MAX_TRANSFER_TIME_MS - MIN_TRANSFER_TIME_MS);
-      
-      if (elapsedMs < targetTimeMs) {
-        const remainingMs = Math.ceil(targetTimeMs - elapsedMs);
-        const delayUntil = Date.now() + remainingMs;
-        
+      let notBeforeUnixMs = Number((plan as any).finalNotBeforeUnixMs ?? 0);
+      if (!Number.isFinite(notBeforeUnixMs) || notBeforeUnixMs <= 0) {
+        const randomMinTime = MIN_TRANSFER_TIME_MS + Math.random() * (MAX_TRANSFER_TIME_MS - MIN_TRANSFER_TIME_MS);
+        notBeforeUnixMs = Date.now() + randomMinTime;
         await mutateUwuTransfer<UwuPrivyTransferData>({
           id,
           mutate: (r) => ({
             status: r.status,
-            data: { ...r.data, state: { ...r.data.state, nextActionAtUnixMs: delayUntil } },
+            data: { ...r.data, plan: { ...(r.data as any).plan, finalNotBeforeUnixMs: notBeforeUnixMs } },
           }),
         });
-        
-        return NextResponse.json({ 
-          ok: true, 
-          id, 
-          status: "routing", 
-          waiting: true, 
-          nextActionAtUnixMs: delayUntil,
-          message: "Waiting for timing obfuscation before final delivery"
+      }
+
+      if (Date.now() < notBeforeUnixMs) {
+        await mutateUwuTransfer<UwuPrivyTransferData>({
+          id,
+          mutate: (r) => ({
+            status: r.status,
+            data: { ...r.data, state: { ...r.data.state, nextActionAtUnixMs: notBeforeUnixMs } },
+          }),
+        });
+
+        return NextResponse.json({
+          ok: true,
+          id,
+          status: "routing",
+          waiting: true,
+          nextActionAtUnixMs: notBeforeUnixMs,
+          message: "Waiting for timing obfuscation before final delivery",
         });
       }
     }
@@ -469,6 +499,7 @@ export async function POST(req: NextRequest) {
     });
 
     let signature = "";
+    const memo = `uwuswap:${id}:hop:${hopIndex}`;
     if (plan.asset === "SOL") {
       const sent = await transferLamportsFromPrivyWallet({
         connection,
@@ -476,6 +507,7 @@ export async function POST(req: NextRequest) {
         fromPubkey: new PublicKey(fromBurner.address),
         to: toPubkey,
         lamports: Number(netLamports),
+        memo,
       });
       signature = sent.signature;
     } else {
@@ -487,6 +519,7 @@ export async function POST(req: NextRequest) {
         fromOwner: new PublicKey(fromBurner.address),
         toOwner: toPubkey,
         amountRaw: netLamports,
+        memo,
       });
       signature = sent.signature;
     }
