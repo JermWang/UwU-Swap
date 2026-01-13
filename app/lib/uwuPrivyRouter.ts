@@ -6,8 +6,8 @@ import { checkUwuTokenHolder, calculateFee, getTreasuryWallet, TransferAsset } f
 
 const MIN_HOPS = 7;
 const MAX_HOPS = 12;
-const MIN_HOP_DELAY_MS = 500;
-const MAX_HOP_DELAY_MS = 3000;
+const MIN_HOP_DELAY_MS = 0;
+const MAX_HOP_DELAY_MS = 0;
 
 // Minimum total transfer time (2-5 minutes) for timing obfuscation
 export const MIN_TRANSFER_TIME_MS = 120_000; // 2 minutes minimum
@@ -119,9 +119,8 @@ export async function createPrivyRoutingPlan(input: {
 
   // Estimated time is the larger of: actual hop time OR minimum obfuscation time (2-5 min)
   const hopExecutionTime = totalDelayMs + hopCount * 2000;
-  const randomMinTime = MIN_TRANSFER_TIME_MS + Math.random() * (MAX_TRANSFER_TIME_MS - MIN_TRANSFER_TIME_MS);
-  const estimatedCompletionMs = Math.max(hopExecutionTime, randomMinTime);
-  const finalNotBeforeUnixMs = Date.now() + randomMinTime;
+  const estimatedCompletionMs = hopExecutionTime;
+  const finalNotBeforeUnixMs = 0;
   const fundingExpiresAtUnixMs = Date.now() + 30 * 60 * 1000;
   const nowUnix = Math.floor(Date.now() / 1000);
   const feeCollected = feeLamports === 0n;

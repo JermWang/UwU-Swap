@@ -20,6 +20,7 @@ export const runtime = "nodejs";
 
 const IN_FLIGHT_STALE_MS = 120_000;
 const RPC_TIMEOUT_MS = 10_000;
+const TIMING_OBFUSCATION_ENABLED = false;
 
 function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   return new Promise<T>((resolve, reject) => {
@@ -184,8 +185,7 @@ async function reconcileStaleInFlight(opts: { connection: Connection; id: string
             return { status: "complete", data: { ...d, state: s } };
           }
 
-          const delays = Array.isArray(d.plan.hopDelaysMs) ? d.plan.hopDelaysMs : [];
-          s.nextActionAtUnixMs = Date.now() + Number(delays[s.currentHop] ?? 0);
+          s.nextActionAtUnixMs = Date.now();
         }
 
         return { status: rec.status, data: { ...d, state: s } };
@@ -355,7 +355,7 @@ export async function POST(req: NextRequest) {
       if (!funded) return NextResponse.json({ ok: true, id, status: "awaiting_funding", funded: false, fundingSignature: sig });
 
       const nextStatus = "routing" as const;
-      const nextActionAt = Date.now() + Number(plan.hopDelaysMs?.[0] ?? 0);
+      const nextActionAt = Date.now();
 
       await mutateUwuTransfer<UwuPrivyTransferData>({
         id,
@@ -379,10 +379,6 @@ export async function POST(req: NextRequest) {
 
     if (refreshed.status !== "routing") {
       return NextResponse.json({ ok: true, id, status: refreshed.status });
-    }
-
-    if (Date.now() < Number(state.nextActionAtUnixMs || 0)) {
-      return NextResponse.json({ ok: true, id, status: "routing", waiting: true, nextActionAtUnixMs: state.nextActionAtUnixMs });
     }
 
     // Collect fee (once) from burner0 -> treasury
@@ -459,7 +455,7 @@ export async function POST(req: NextRequest) {
     const toPubkey = isFinalHop ? new PublicKey(plan.toWallet) : new PublicKey(plan.burners[hopIndex + 1].address);
 
     // TIMING OBFUSCATION: Delay final distribution until minimum time has passed
-    if (isFinalHop) {
+    if (TIMING_OBFUSCATION_ENABLED && isFinalHop) {
       let notBeforeUnixMs = Number((plan as any).finalNotBeforeUnixMs ?? 0);
       if (!Number.isFinite(notBeforeUnixMs) || notBeforeUnixMs <= 0) {
         const randomMinTime = MIN_TRANSFER_TIME_MS + Math.random() * (MAX_TRANSFER_TIME_MS - MIN_TRANSFER_TIME_MS);
@@ -526,7 +522,7 @@ export async function POST(req: NextRequest) {
 
     const nextHop = hopIndex + 1;
     const isComplete = nextHop >= hopCount;
-    const nextDelay = Number(plan.hopDelaysMs?.[nextHop] ?? 0);
+    const nextDelay = 0;
 
     await mutateUwuTransfer<UwuPrivyTransferData>({
       id,
