@@ -118,8 +118,13 @@ export async function createPrivyRoutingPlan(input: {
   }
 
   // Estimated time is the larger of: actual hop time OR minimum obfuscation time (2-5 min)
-  const hopExecutionTime = totalDelayMs + hopCount * 2000;
-  const estimatedCompletionMs = hopExecutionTime;
+  const hopExecutionTime = totalDelayMs;
+  const pollIntervalMs = 2200;
+  const estimatedTxConfirmMs = 4500;
+  const ticksPerTx = Math.max(1, Math.ceil(estimatedTxConfirmMs / pollIntervalMs));
+  const perTxCadenceMs = ticksPerTx * pollIntervalMs;
+  const txCount = hopCount + (feeApplied ? 1 : 0);
+  const estimatedCompletionMs = hopExecutionTime + txCount * perTxCadenceMs;
   const finalNotBeforeUnixMs = 0;
   const fundingExpiresAtUnixMs = Date.now() + 30 * 60 * 1000;
   const nowUnix = Math.floor(Date.now() / 1000);

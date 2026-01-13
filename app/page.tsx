@@ -14,6 +14,7 @@ import {
   generateRoutingUpdate,
   generateBalanceResponse,
   generateUnknownResponse,
+  getSolscanTxUrl,
   solToLamports,
   lamportsToSol,
   ChatMessage,
@@ -243,8 +244,29 @@ Hold $UWU tokens for zero-fee transfers!`,
     const routingStartedAt = Number(quickSendState.routingStartedAtUnixMs ?? 0);
     if (!Number.isFinite(routingStartedAt) || routingStartedAt <= 0 || !hasEstimate) return "—";
 
-    const eta = routingStartedAt + estMs;
-    const remaining = Math.max(0, Math.floor((eta - Date.now()) / 1000));
+    const now = Date.now();
+    const planEtaMs = routingStartedAt + estMs;
+    const planRemainingMs = Math.max(0, planEtaMs - now);
+
+    let remainingMs = planRemainingMs;
+    const hopCount = Number(quickSendState.hopCount ?? 0);
+    const currentHop = Number(quickSendState.currentHop ?? 0);
+    const elapsedMs = Math.max(0, now - routingStartedAt);
+
+    // As hops complete, prefer the observed hop rate so ETA converges to reality.
+    if (hopCount > 0 && currentHop > 0 && Number.isFinite(elapsedMs) && elapsedMs > 0) {
+      const feeStepMs = quickSendState.feeApplied ? 6600 : 0;
+      const elapsedForRateMs = Math.max(0, elapsedMs - feeStepMs);
+      const msPerHopObserved = elapsedForRateMs / currentHop;
+      const msPerHopClamped = Math.max(1500, Math.min(20000, msPerHopObserved));
+      const hopsRemaining = Math.max(0, hopCount - currentHop);
+      const observedRemainingMs = hopsRemaining * msPerHopClamped;
+      const progress = Math.max(0, Math.min(1, currentHop / hopCount));
+      const weight = Math.max(0.25, Math.min(0.85, progress));
+      remainingMs = Math.round((1 - weight) * planRemainingMs + weight * observedRemainingMs);
+    }
+
+    const remaining = Math.max(0, Math.floor(remainingMs / 1000));
     if (remaining <= 0) return "Any moment...";
     return `~${remaining}s`;
   };
@@ -993,7 +1015,14 @@ Hold $UWU tokens for zero-fee transfers!`,
                 )}
                 <div className="swap-message-content">
                   <div className="swap-message-text">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm]}
+                      components={{
+                        a: ({ node, ...props }) => <a {...props} target="_blank" rel="noopener noreferrer" />,
+                      }}
+                    >
+                      {msg.content}
+                    </ReactMarkdown>
                   </div>
                   <div className="swap-message-time" suppressHydrationWarning>{formatTime(msg.timestamp)}</div>
                 </div>
@@ -1246,7 +1275,14 @@ Hold $UWU tokens for zero-fee transfers!`,
                     {quickSendState.txSignature && (
                       <div className="swap-tracking-row">
                         <span>Final TX</span>
-                        <span className="swap-tracking-tx">{quickSendState.txSignature.slice(0, 8)}...</span>
+                        <a
+                          className="swap-tracking-tx"
+                          href={getSolscanTxUrl(quickSendState.txSignature)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          {quickSendState.txSignature.slice(0, 8)}...
+                        </a>
                       </div>
                     )}
                   </div>

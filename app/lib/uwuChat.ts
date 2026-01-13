@@ -139,11 +139,12 @@ export function generateRoutingUpdate(input: {
 
   if (status === "complete") {
     const shortSig = signature ? `${signature.slice(0, 8)}...` : "";
+    const url = signature ? getSolscanTxUrl(signature) : "";
     return `# Transfer Complete!
 
 Your tokens arrived safely~
 
-**TX**: \`${shortSig}\`
+**TX**: ${signature ? `[\`${shortSig}\`](${url})` : "—"}
 
 View on Solscan for confirmation, nya~`;
   }
@@ -212,4 +213,13 @@ export function solToLamports(sol: number): bigint {
 
 export function lamportsToSol(lamports: bigint): number {
   return Number(lamports) / LAMPORTS_PER_SOL;
+}
+
+export function getSolscanTxUrl(signature: string): string {
+  const sig = String(signature ?? "").trim();
+  const base = `https://solscan.io/tx/${encodeURIComponent(sig)}`;
+  const cluster = String(process.env.NEXT_PUBLIC_SOLANA_CLUSTER ?? "mainnet-beta").trim();
+  if (cluster === "devnet") return `${base}?cluster=devnet`;
+  if (cluster === "testnet") return `${base}?cluster=testnet`;
+  return base;
 }
