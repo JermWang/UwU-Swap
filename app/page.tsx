@@ -52,7 +52,9 @@ type QuickSendState = {
   hopCount: number;
   currentHop: number;
   startTime: number;
-  estimatedArrival: number;
+  estimatedCompletionMs?: number;
+  routingStartedAtUnixMs?: number;
+  estimatedArrival?: number;
   fundingExpiresAtUnixMs?: number;
   requiredLamports?: string;
   depositBalanceLamports?: string;
@@ -60,29 +62,29 @@ type QuickSendState = {
   txSignature?: string;
 };
 
- type AgentProfile = {
-   name?: string;
-   role?: string;
-   personality?: {
-     tone?: string;
-     vibe?: string;
-     speech_style?: string;
-     mannerisms?: string[];
-   };
-   knowledge_scope?: string[];
-   sample_phrases?: {
-     greeting?: string;
-     explaining_privacy?: string;
-     fee_logic?: string;
-     error_wallet?: string;
-     swap_start?: string;
-   };
-   visual_cue?: {
-     avatar_description?: string;
-     dominant_colors?: string[];
-   };
-   custom_tags?: string[];
- };
+type AgentProfile = {
+  name?: string;
+  role?: string;
+  personality?: {
+    tone?: string;
+    vibe?: string;
+    speech_style?: string;
+    mannerisms?: string[];
+  };
+  knowledge_scope?: string[];
+  sample_phrases?: {
+    greeting?: string;
+    explaining_privacy?: string;
+    fee_logic?: string;
+    error_wallet?: string;
+    swap_start?: string;
+  };
+  visual_cue?: {
+    avatar_description?: string;
+    dominant_colors?: string[];
+  };
+  custom_tags?: string[];
+};
 
 export default function Home() {
   const { publicKey, signTransaction, connected } = useWallet();
@@ -227,7 +229,22 @@ Hold $UWU tokens for zero-fee transfers!`,
 
   const getEstimatedRemaining = () => {
     if (!quickSendState) return "—";
-    const remaining = Math.max(0, Math.floor((quickSendState.estimatedArrival - Date.now()) / 1000));
+
+    const estMs = Number(quickSendState.estimatedCompletionMs ?? 0);
+    const hasEstimate = Number.isFinite(estMs) && estMs > 0;
+
+    if (quickSendState.status === "awaiting_deposit") {
+      if (!hasEstimate) return "After deposit";
+      return `~${Math.ceil(estMs / 1000)}s after deposit`;
+    }
+
+    if (quickSendState.status !== "routing") return "—";
+
+    const routingStartedAt = Number(quickSendState.routingStartedAtUnixMs ?? 0);
+    if (!Number.isFinite(routingStartedAt) || routingStartedAt <= 0 || !hasEstimate) return "—";
+
+    const eta = routingStartedAt + estMs;
+    const remaining = Math.max(0, Math.floor((eta - Date.now()) / 1000));
     if (remaining <= 0) return "Any moment...";
     return `~${remaining}s`;
   };
@@ -278,6 +295,8 @@ Hold $UWU tokens for zero-fee transfers!`,
         const currentHop = Number(statusData?.state?.currentHop ?? 0);
         const finalSig = typeof statusData?.state?.finalSignature === "string" ? statusData.state.finalSignature : "";
 
+        const estimatedMs = Number(statusData?.plan?.estimatedCompletionMs ?? 0);
+
         const expiresAt = Number(statusData?.plan?.fundingExpiresAtUnixMs ?? 0);
 
         const funded = Boolean(stepData?.funded ?? false);
@@ -289,11 +308,27 @@ Hold $UWU tokens for zero-fee transfers!`,
         setQuickSendState((prev) => {
           if (!prev) return prev;
 
+          const nextEstimatedMs =
+            Number.isFinite(estimatedMs) && estimatedMs > 0 ? estimatedMs : Number(prev.estimatedCompletionMs ?? 0);
+
+          const shouldStartRoutingClock = nextStatus === "routing" && !prev.routingStartedAtUnixMs;
+          const routingStartedAtUnixMs = shouldStartRoutingClock
+            ? Date.now()
+            : prev.routingStartedAtUnixMs;
+
+          const nextEstimatedArrival =
+            nextStatus === "routing" && routingStartedAtUnixMs && nextEstimatedMs > 0
+              ? routingStartedAtUnixMs + nextEstimatedMs
+              : prev.estimatedArrival;
+
           const next: QuickSendState = {
             ...prev,
             status: nextStatus,
             hopCount: hopCount || prev.hopCount,
             currentHop,
+            estimatedCompletionMs: nextEstimatedMs > 0 ? nextEstimatedMs : prev.estimatedCompletionMs,
+            routingStartedAtUnixMs,
+            estimatedArrival: nextEstimatedArrival,
             fundingExpiresAtUnixMs: expiresAt || prev.fundingExpiresAtUnixMs,
             txSignature: finalSig || prev.txSignature,
           };
@@ -383,7 +418,8 @@ Hold $UWU tokens for zero-fee transfers!`,
         hopCount,
         currentHop: 0,
         startTime: Date.now(),
-        estimatedArrival: Date.now() + (Number.isFinite(estMs) && estMs > 0 ? estMs : 0),
+        estimatedCompletionMs: Number.isFinite(estMs) && estMs > 0 ? estMs : undefined,
+        estimatedArrival: undefined,
         fundingExpiresAtUnixMs: Number.isFinite(expiresAt) && expiresAt > 0 ? expiresAt : undefined,
       });
 
